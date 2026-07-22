@@ -1,0 +1,88 @@
+version: '3.8'
+
+services:
+  # Shared Cache
+  redis:
+    image: redis:7-alpine
+    container_name: marketplace-redis
+    ports:
+      - "6379:6379"
+
+  # Event Broker
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: marketplace-rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+
+  # Databases (Configured for isolated service DBs)
+  postgres-auth:
+    image: postgres:16-alpine
+    container_name: db-auth
+    environment:
+      POSTGRES_DB: auth_db
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5432:5432"
+
+  postgres-user:
+    image: postgres:16-alpine
+    container_name: db-user
+    environment:
+      POSTGRES_DB: user_db
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5433:5432"
+
+  postgres-seller:
+    image: postgres:16-alpine
+    container_name: db-seller
+    environment:
+      POSTGRES_DB: seller_db
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5434:5432"
+
+  postgres-product:
+    image: postgres:16-alpine
+    container_name: db-product
+    environment:
+      POSTGRES_DB: product_db
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5435:5432"
+
+  postgres-inventory:
+    image: postgres:16-alpine
+    container_name: db-inventory
+    environment:
+      POSTGRES_DB: inventory_db
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5436:5432"
+
+  postgres-order:
+    image: postgres:16-alpine
+    container_name: db-order
+    environment:
+      POSTGRES_DB: order_db
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5437:5432"
+
+  postgres-fulfillment:
+    image: postgres:16-alpine
+    container_name: db-fulfillment
+    environment:
+      POSTGRES_DB: fulfillment_db
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5438:5432"
