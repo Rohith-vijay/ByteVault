@@ -5,8 +5,8 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>com.marketplace</groupId>
-        <artifactId>backend-parent</artifactId>
+        <groupId>com.bytevault</groupId>
+        <artifactId>bytevault-media</artifactId>
         <version>1.0.0-SNAPSHOT</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
@@ -15,7 +15,7 @@
     <packaging>jar</packaging>
 
     <name>Common Library</name>
-    <description>Shared models, DTOs, and utility modules for the Marketplace Platform</description>
+    <description>Shared models, DTOs, and utility modules for the ByteVault Media</description>
 
     <dependencies>
         <!-- Spring Boot Starter Web (for Response DTOs and validation) -->

@@ -4,14 +4,14 @@ services:
   # Shared Cache
   redis:
     image: redis:7-alpine
-    container_name: marketplace-redis
+    container_name: bytevault-redis
     ports:
       - "6379:6379"
 
   # Event Broker
   rabbitmq:
     image: rabbitmq:3-management-alpine
-    container_name: marketplace-rabbitmq
+    container_name: bytevault-rabbitmq
     ports:
       - "5672:5672"
       - "15672:15672"

@@ -5,8 +5,8 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>com.marketplace</groupId>
-        <artifactId>backend-parent</artifactId>
+        <groupId>com.bytevault</groupId>
+        <artifactId>bytevault-media</artifactId>
         <version>1.0.0-SNAPSHOT</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
@@ -46,7 +46,7 @@
             <scope>provided</scope>
         </dependency>
         <dependency>
-            <groupId>com.marketplace</groupId>
+            <groupId>com.bytevault</groupId>
             <artifactId>common-library</artifactId>
         </dependency>
     </dependencies>

@@ -14,6 +14,10 @@ spring:
       ddl-auto: update
     show-sql: false
     database-platform: org.hibernate.dialect.PostgreSQLDialect
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 50MB
 
 eureka:
   client:
@@ -23,3 +27,8 @@ eureka:
 app:
   gateway:
     secret: ${GATEWAY_SECRET:platform_default_gateway_shared_secret}
+  storage:
+    minio:
+      endpoint: ${MINIO_ENDPOINT:}
+      bucket: ${MINIO_BUCKET:bytevault-assets}
+    local-fallback-dir: ${LOCAL_STORAGE_DIR:temp-assets}

@@ -4,13 +4,13 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>com.marketplace</groupId>
-    <artifactId>backend-parent</artifactId>
+    <groupId>com.bytevault</groupId>
+    <artifactId>bytevault-media</artifactId>
     <version>1.0.0-SNAPSHOT</version>
     <packaging>pom</packaging>
 
-    <name>Marketplace Platform Backend Parent</name>
-    <description>Enterprise multi-module parent POM for the Marketplace Platform</description>
+    <name>ByteVault Media Backend Parent</name>
+    <description>Enterprise multi-module parent POM for ByteVault Media</description>
 
     <properties>
         <java.version>21</java.version>
@@ -30,14 +30,15 @@
         <module>api-gateway</module>
         <module>auth-service</module>
         <module>user-service</module>
-        <module>seller-service</module>
         <module>product-service</module>
-        <module>inventory-service</module>
         <module>cart-service</module>
         <module>order-service</module>
+        <module>payment-service</module>
         <module>fulfillment-service</module>
-        <module>shipping-service</module>
         <module>notification-service</module>
+        <module>inventory-service</module>
+        <module>shipping-service</module>
+        <module>warehouse-service</module>
     </modules>
 
     <dependencyManagement>
@@ -75,7 +76,7 @@
             
             <!-- Shared Common Library Module -->
             <dependency>
-                <groupId>com.marketplace</groupId>
+                <groupId>com.bytevault</groupId>
                 <artifactId>common-library</artifactId>
                 <version>1.0.0-SNAPSHOT</version>
             </dependency>
