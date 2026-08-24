@@ -127,8 +127,8 @@ public class ProductService {
                 .physicalSku(p.getPhysicalSku())
                 .physicalWeight(p.getPhysicalWeight())
                 .physicalDimensions(p.getPhysicalDimensions())
-                .createdAt(p.getCreatedAt() != null ? p.getCreatedAt().toLocalDateTime() : null)
-                .updatedAt(p.getUpdatedAt() != null ? p.getUpdatedAt().toLocalDateTime() : null)
+                .createdAt(p.getCreatedAt())
+                .updatedAt(p.getUpdatedAt())
                 .build();
     }
 }
