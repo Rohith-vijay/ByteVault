@@ -4,8 +4,32 @@ server:
 spring:
   application:
     name: auth-service
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/auth_db}
+    username: ${DB_USER:admin}
+    password: ${DB_PASSWORD:password}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
 
 eureka:
   client:
     service-url:
       defaultZone: http://localhost:8761/eureka/
+
+# Security context configurations
+app:
+  gateway:
+    secret: ${GATEWAY_SECRET:platform_default_gateway_shared_secret}
+  jwt:
+    secret: ${JWT_SECRET:default_super_secure_jwt_secret_placeholder_minimum_32_chars_long}
+    expiration: ${JWT_EXPIRATION:900000} # 15 minutes
+jwt:
+  refresh-expiration: ${JWT_REFRESH_EXPIRATION:604800000} # 7 days

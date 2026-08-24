@@ -4,8 +4,16 @@ server:
 spring:
   application:
     name: cart-service
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
 
 eureka:
   client:
     service-url:
       defaultZone: http://localhost:8761/eureka/
+
+app:
+  gateway:
+    secret: ${GATEWAY_SECRET:platform_default_gateway_shared_secret}

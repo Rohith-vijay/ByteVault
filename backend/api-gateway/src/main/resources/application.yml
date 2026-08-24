@@ -10,8 +10,56 @@ spring:
         locator:
           enabled: true
           lower-case-service-id: true
+      routes:
+        - id: auth-service
+          uri: lb://auth-service
+          predicates:
+            - Path=/api/v1/auth/**
+        - id: user-service
+          uri: lb://user-service
+          predicates:
+            - Path=/api/v1/users/**
+        - id: seller-service
+          uri: lb://seller-service
+          predicates:
+            - Path=/api/v1/sellers/**
+        - id: product-service
+          uri: lb://product-service
+          predicates:
+            - Path=/api/v1/products/**
+        - id: inventory-service
+          uri: lb://inventory-service
+          predicates:
+            - Path=/api/v1/inventory/**
+        - id: cart-service
+          uri: lb://cart-service
+          predicates:
+            - Path=/api/v1/cart/**
+        - id: order-service
+          uri: lb://order-service
+          predicates:
+            - Path=/api/v1/orders/**
+        - id: fulfillment-service
+          uri: lb://fulfillment-service
+          predicates:
+            - Path=/api/v1/fulfillments/**
+        - id: shipping-service
+          uri: lb://shipping-service
+          predicates:
+            - Path=/api/v1/shipping/**
+        - id: notification-service
+          uri: lb://notification-service
+          predicates:
+            - Path=/api/v1/notifications/**
 
 eureka:
   client:
     service-url:
       defaultZone: http://localhost:8761/eureka/
+
+# Gateway Origin security credentials
+app:
+  gateway:
+    secret: ${GATEWAY_SECRET:platform_default_gateway_shared_secret}
+  jwt:
+    secret: ${JWT_SECRET:default_super_secure_jwt_secret_placeholder_minimum_32_chars_long}
