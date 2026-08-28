@@ -24,15 +24,11 @@ public class OrderPaidEventListener {
         try {
             String orderId = (String) event.get("orderId");
             String userId = (String) event.get("userId");
-            String email = (String) event.get("customerEmail");
-            String name = (String) event.get("customerName");
+            String rawEmail = (String) event.get("customerEmail");
+            String rawName = (String) event.get("customerName");
 
-            if (email == null || email.trim().isEmpty()) {
-                email = "customer@example.com"; // Fallback email
-            }
-            if (name == null || name.trim().isEmpty()) {
-                name = "Valued Customer"; // Fallback name
-            }
+            final String email = (rawEmail == null || rawEmail.trim().isEmpty()) ? "customer@example.com" : rawEmail;
+            final String name = (rawName == null || rawName.trim().isEmpty()) ? "Valued Customer" : rawName;
 
             // Mocks download redirect link to gateway fulfillment portal
             String downloadLink = "http://localhost:8080/api/v1/downloads/";
