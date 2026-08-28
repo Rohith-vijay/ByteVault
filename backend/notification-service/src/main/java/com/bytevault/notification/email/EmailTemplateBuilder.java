@@ -212,4 +212,18 @@ public class EmailTemplateBuilder {
                 """.formatted(platformName, date, platformEmail, platformEmail);
         return buildTemplate(name, content, "Secure Account", getFrontendUrl() + "/login");
     }
+
+    public String buildOrderPaidEmail(String name, String orderId, String downloadLink) {
+        String content = """
+                <p>Thank you for your purchase from <strong>%s</strong>!</p>
+                <p>Your payment was verified successfully and your order has been processed.</p>
+                <div style="background-color: #f7f9fc; border-left: 4px solid #B07A3F; padding: 12px; margin: 20px 0; border-radius: 0 8px 8px 0;">
+                  <strong>Order Summary:</strong><br>
+                  Order ID: %s<br>
+                  Status: Paid / Fulfilled
+                </div>
+                <p>For digital items, you can download your purchases immediately using the secure download link below. This download access is secure and requires you to be logged into your account.</p>
+                """.formatted(platformName, orderId);
+        return buildTemplate(name, content, "Access Downloads", downloadLink);
+    }
 }

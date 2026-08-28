@@ -16,4 +16,8 @@ public class PaymentVerifyRequest {
     private String razorpayPaymentId;
     private String razorpaySignature;
     private String dbOrderId;
+    private String userId;
+    private java.util.List<String> productIds;
+    private String customerEmail;
+    private String customerName;
 }

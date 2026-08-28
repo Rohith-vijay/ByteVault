@@ -37,6 +37,10 @@ public class PaymentController {
         eventData.put("orderId", request.getDbOrderId());
         eventData.put("razorpayOrderId", request.getRazorpayOrderId());
         eventData.put("razorpayPaymentId", request.getRazorpayPaymentId());
+        eventData.put("userId", request.getUserId());
+        eventData.put("productIds", request.getProductIds());
+        eventData.put("customerEmail", request.getCustomerEmail());
+        eventData.put("customerName", request.getCustomerName());
         eventData.put("status", "PAID");
 
         log.info("[PaymentController] Publishing OrderPaidEvent to RabbitMQ: {}", eventData);

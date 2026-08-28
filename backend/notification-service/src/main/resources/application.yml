@@ -21,6 +21,11 @@ spring:
           connectiontimeout: 5000
           timeout: 5000
           writetimeout: 5000
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USER:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
 
 eureka:
   client:
