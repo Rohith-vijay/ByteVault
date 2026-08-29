@@ -33,6 +33,7 @@ public class AuthService {
     private final AuthenticationManager authenticationManager;
     private final RefreshTokenService refreshTokenService;
     private final EmailVerificationService emailVerificationService;
+    private final org.springframework.amqp.rabbit.core.RabbitTemplate rabbitTemplate;
 
     @Transactional
     public AuthenticationResponse register(RegisterRequest request) {
@@ -69,6 +70,19 @@ public class AuthService {
             emailVerificationService.sendVerificationEmail(credentials);
         } catch (Exception e) {
             log.error("Failed to send welcome email verification link for {}", credentials.getUsername(), e);
+        }
+
+        // Publish UserRegisteredEvent to RabbitMQ
+        try {
+            java.util.Map<String, Object> event = new java.util.HashMap<>();
+            event.put("userId", credentials.getId().toString());
+            event.put("email", credentials.getUsername());
+            event.put("fullName", request.getFullName());
+            event.put("role", userRole.name());
+            rabbitTemplate.convertAndSend("user.exchange", "user.registered", event);
+            log.info("[AuthService] Published UserRegisteredEvent: userId={}, email={}", credentials.getId(), credentials.getUsername());
+        } catch (Exception e) {
+            log.warn("[AuthService] Could not publish UserRegisteredEvent (RabbitMQ might be offline in dev): {}", e.getMessage());
         }
 
         String accessToken = jwtService.generateToken(credentials);

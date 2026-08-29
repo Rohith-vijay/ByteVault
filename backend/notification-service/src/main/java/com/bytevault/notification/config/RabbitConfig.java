@@ -7,22 +7,41 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 public class RabbitConfig {
 
-    public static final String EXCHANGE = "order.exchange";
-    public static final String QUEUE_NAME = "notification.queue.order.paid";
-    public static final String ROUTING_KEY = "order.paid";
+    public static final String ORDER_EXCHANGE = "order.exchange";
+    public static final String ORDER_PAID_QUEUE = "notification.queue.order.paid";
+    public static final String ORDER_PAID_ROUTING_KEY = "order.paid";
+
+    public static final String USER_EXCHANGE = "user.exchange";
+    public static final String USER_REGISTERED_QUEUE = "notification.queue.user.registered";
+    public static final String USER_REGISTERED_ROUTING_KEY = "user.registered";
 
     @Bean
     public TopicExchange orderExchange() {
-        return new TopicExchange(EXCHANGE);
+        return new TopicExchange(ORDER_EXCHANGE);
     }
 
     @Bean
-    public Queue notificationQueue() {
-        return QueueBuilder.durable(QUEUE_NAME).build();
+    public Queue orderPaidNotificationQueue() {
+        return QueueBuilder.durable(ORDER_PAID_QUEUE).build();
     }
 
     @Bean
-    public Binding notificationBinding(Queue notificationQueue, TopicExchange orderExchange) {
-        return BindingBuilder.bind(notificationQueue).to(orderExchange).with(ROUTING_KEY);
+    public Binding orderPaidNotificationBinding(Queue orderPaidNotificationQueue, TopicExchange orderExchange) {
+        return BindingBuilder.bind(orderPaidNotificationQueue).to(orderExchange).with(ORDER_PAID_ROUTING_KEY);
+    }
+
+    @Bean
+    public TopicExchange userExchange() {
+        return new TopicExchange(USER_EXCHANGE);
+    }
+
+    @Bean
+    public Queue userRegisteredNotificationQueue() {
+        return QueueBuilder.durable(USER_REGISTERED_QUEUE).build();
+    }
+
+    @Bean
+    public Binding userRegisteredNotificationBinding(Queue userRegisteredNotificationQueue, TopicExchange userExchange) {
+        return BindingBuilder.bind(userRegisteredNotificationQueue).to(userExchange).with(USER_REGISTERED_ROUTING_KEY);
     }
 }
