@@ -24,4 +24,12 @@ public class RegisterRequest {
     private String fullName;
 
     private String role;
+
+    // Optional vendor onboarding fields
+    private String storeName;
+    private String storeDescription;
+    private String businessTaxId;
+    private String payoutInfo;
+    private String supportEmail;
 }
+

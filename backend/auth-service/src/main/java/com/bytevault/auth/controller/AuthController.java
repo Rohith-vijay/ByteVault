@@ -2,8 +2,11 @@ package com.bytevault.auth.controller;
 
 import com.bytevault.auth.dto.AuthenticationRequest;
 import com.bytevault.auth.dto.AuthenticationResponse;
+import com.bytevault.auth.dto.ForgotPasswordRequest;
+import com.bytevault.auth.dto.OAuthLoginRequest;
 import com.bytevault.auth.dto.RefreshTokenRequest;
 import com.bytevault.auth.dto.RegisterRequest;
+import com.bytevault.auth.dto.ResetPasswordRequest;
 import com.bytevault.auth.service.AuthService;
 import com.bytevault.auth.service.EmailVerificationService;
 import com.bytevault.common.api.ApiResponse;
@@ -96,6 +99,28 @@ public class AuthController {
         RefreshTokenRequest refreshRequest = new RefreshTokenRequest();
         refreshRequest.setRefreshToken(token);
         AuthenticationResponse auth = authService.refreshToken(refreshRequest);
+        if (auth.getToken() != null) setCookie(response, auth.getToken());
+        if (auth.getRefreshToken() != null) setRefreshCookie(response, auth.getRefreshToken());
+        return ResponseEntity.ok(auth);
+    }
+
+    @PostMapping("/forgot-password")
+    public ResponseEntity<ApiResponse<Void>> forgotPassword(@Valid @RequestBody ForgotPasswordRequest request) {
+        authService.forgotPassword(request);
+        return ResponseEntity.ok(ApiResponse.success("If an account associated with that email exists, a password reset link has been sent."));
+    }
+
+    @PostMapping("/reset-password")
+    public ResponseEntity<ApiResponse<Void>> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
+        authService.resetPassword(request);
+        return ResponseEntity.ok(ApiResponse.success("Password has been reset successfully. Please log in with your new credentials."));
+    }
+
+    @PostMapping("/oauth")
+    public ResponseEntity<AuthenticationResponse> oauthLogin(
+            @Valid @RequestBody OAuthLoginRequest request,
+            HttpServletResponse response) {
+        AuthenticationResponse auth = authService.oauthLogin(request);
         if (auth.getToken() != null) setCookie(response, auth.getToken());
         if (auth.getRefreshToken() != null) setRefreshCookie(response, auth.getRefreshToken());
         return ResponseEntity.ok(auth);

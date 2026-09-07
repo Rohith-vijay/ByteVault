@@ -31,7 +31,16 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         // Public endpoints exposed through Gateway
-                        .requestMatchers("/api/v1/auth/login", "/api/v1/auth/register", "/api/v1/auth/refresh", "/api/v1/auth/logout").permitAll()
+                        .requestMatchers(
+                                "/api/v1/auth/login",
+                                "/api/v1/auth/register",
+                                "/api/v1/auth/refresh",
+                                "/api/v1/auth/logout",
+                                "/api/v1/auth/verify",
+                                "/api/v1/auth/forgot-password",
+                                "/api/v1/auth/reset-password",
+                                "/api/v1/auth/oauth"
+                        ).permitAll()
                         .requestMatchers("/actuator/health", "/actuator/info", "/error").permitAll()
                         .anyRequest().authenticated()
                 )
