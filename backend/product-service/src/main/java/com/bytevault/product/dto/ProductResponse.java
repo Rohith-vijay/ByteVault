@@ -15,13 +15,17 @@ import java.util.UUID;
 @Builder
 public class ProductResponse {
     private UUID id;
+    private UUID vendorId;
     private String name;
     private String description;
     private BigDecimal price;
+    private String currency;
+    private String sku;
     private ProductType productType;
     private ProductStatus status;
     private Long categoryId;
     private String categoryName;
+    private String tags;
 
     // Digital configs
     private String fileName;
@@ -33,6 +37,16 @@ public class ProductResponse {
     private String physicalSku;
     private Double physicalWeight;
     private String physicalDimensions;
+    private Double weight;
+    private Double length;
+    private Double width;
+    private Double height;
+    private String shippingClass;
+
+    // Moderation fields
+    private String moderationReason;
+    private UUID moderatedBy;
+    private java.time.Instant moderatedAt;
 
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

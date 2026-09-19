@@ -1,0 +1,11 @@
+server:
+  port: 8092
+
+spring:
+  datasource:
+    url: ${WAREHOUSE_DB_URL:jdbc:postgresql://localhost:5492/warehouse_db}
+    username: ${WAREHOUSE_DB_USER:admin}
+    password: ${WAREHOUSE_DB_PASS:password}
+  jpa:
+    hibernate:
+      ddl-auto: update

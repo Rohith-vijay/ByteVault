@@ -32,4 +32,22 @@ public abstract class BaseAuditableEntity {
     @Version
     @Column(name = "version", nullable = false)
     private Long version = 0L;
+
+    @jakarta.persistence.PrePersist
+    public void onPrePersist() {
+        if (this.createdAt == null) {
+            this.createdAt = LocalDateTime.now();
+        }
+        if (this.updatedAt == null) {
+            this.updatedAt = LocalDateTime.now();
+        }
+        if (this.version == null) {
+            this.version = 0L;
+        }
+    }
+
+    @jakarta.persistence.PreUpdate
+    public void onPreUpdate() {
+        this.updatedAt = LocalDateTime.now();
+    }
 }

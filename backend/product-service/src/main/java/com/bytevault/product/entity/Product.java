@@ -20,6 +20,9 @@ public class Product extends BaseAuditableEntity {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
+    @Column(name = "vendor_id")
+    private UUID vendorId;
+
     @Column(nullable = false)
     private String name;
 
@@ -28,6 +31,13 @@ public class Product extends BaseAuditableEntity {
 
     @Column(nullable = false)
     private BigDecimal price;
+
+    @Builder.Default
+    @Column(nullable = false, length = 10)
+    private String currency = "INR";
+
+    @Column(unique = true)
+    private String sku;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "product_type", nullable = false)
@@ -41,6 +51,9 @@ public class Product extends BaseAuditableEntity {
     @JoinColumn(name = "category_id")
     private Category category;
 
+    @Column(length = 500)
+    private String tags;
+
     // Digital configurations
     private String fileStorageKey;
     private String fileName;
@@ -49,8 +62,23 @@ public class Product extends BaseAuditableEntity {
     private String fileVersion;
     private String fileChecksum;
 
-    // Future physical fields placeholders (nullable)
+    // Physical specifications
     private String physicalSku;
     private Double physicalWeight;
     private String physicalDimensions;
+    private Double weight;
+    private Double length;
+    private Double width;
+    private Double height;
+    private String shippingClass;
+
+    // Admin moderation audit information
+    @Column(name = "moderation_reason", columnDefinition = "TEXT")
+    private String moderationReason;
+
+    @Column(name = "moderated_by")
+    private UUID moderatedBy;
+
+    @Column(name = "moderated_at")
+    private java.time.Instant moderatedAt;
 }

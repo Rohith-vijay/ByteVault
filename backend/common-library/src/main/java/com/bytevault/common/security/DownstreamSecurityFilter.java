@@ -35,6 +35,13 @@ public class DownstreamSecurityFilter implements Filter {
         if (request instanceof HttpServletRequest httpRequest && response instanceof HttpServletResponse httpResponse) {
             String incomingSecret = httpRequest.getHeader(GATEWAY_SECRET_HEADER);
             
+            String uri = httpRequest.getRequestURI();
+            // Allow direct access to Swagger UI, OpenAPI docs, Actuator, and signed download streaming
+            if (uri.startsWith("/swagger-ui") || uri.startsWith("/v3/api-docs") || uri.startsWith("/actuator") || uri.contains("swagger") || uri.contains("api-docs") || uri.startsWith("/api/v1/products/assets/download")) {
+                chain.doFilter(request, response);
+                return;
+            }
+
             // Block direct external access bypassing API Gateway
             if (incomingSecret == null || !incomingSecret.equals(gatewaySecret)) {
                 log.warn("Blocked direct access attempt to: {}. Invalid gateway secret.", httpRequest.getRequestURI());

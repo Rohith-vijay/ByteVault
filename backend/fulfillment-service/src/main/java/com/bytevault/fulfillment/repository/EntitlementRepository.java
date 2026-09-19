@@ -11,5 +11,8 @@ import java.util.UUID;
 @Repository
 public interface EntitlementRepository extends JpaRepository<Entitlement, UUID> {
     List<Entitlement> findByUserId(UUID userId);
-    Optional<Entitlement> findByUserIdAndProductIdAndStatus(UUID userId, UUID productId, String status);
+    List<Entitlement> findByUserIdOrderByGrantedAtDesc(UUID userId);
+    List<Entitlement> findByUserIdAndProductIdOrderByGrantedAtDesc(UUID userId, UUID productId);
+    boolean existsByOrderIdAndProductId(UUID orderId, UUID productId);
+    Optional<Entitlement> findByOrderIdAndProductId(UUID orderId, UUID productId);
 }

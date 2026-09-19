@@ -39,6 +39,7 @@
         <module>inventory-service</module>
         <module>shipping-service</module>
         <module>warehouse-service</module>
+        <module>support-service</module>
     </modules>
 
     <dependencyManagement>
@@ -99,6 +100,13 @@
                 <version>0.11.5</version>
                 <scope>runtime</scope>
             </dependency>
+
+            <!-- Apache POI for Bulk Excel Import -->
+            <dependency>
+                <groupId>org.apache.poi</groupId>
+                <artifactId>poi-ooxml</artifactId>
+                <version>5.2.5</version>
+            </dependency>
         </dependencies>
     </dependencyManagement>
 
@@ -141,6 +149,7 @@
                     <configuration>
                         <source>${java.version}</source>
                         <target>${java.version}</target>
+                        <parameters>true</parameters>
                         <annotationProcessorPaths>
                             <path>
                                 <groupId>org.projectlombok</groupId>

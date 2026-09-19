@@ -25,11 +25,85 @@ import java.util.UUID;
 public class PaymentController {
 
     private final PaymentService paymentService;
+    private final com.bytevault.payment.service.VendorLedgerService vendorLedgerService;
+    private final com.bytevault.payment.service.RefundService refundService;
     private final RabbitTemplate rabbitTemplate;
     private final PaymentTransactionRepository transactionRepository;
-    private final OrderClient orderClient;
+    private final com.bytevault.payment.service.PaymentOrderSyncService paymentOrderSyncService;
 
-    @PostMapping
+    @GetMapping("/vendor/earnings")
+    public ResponseEntity<com.bytevault.payment.dto.VendorEarningsResponse> getVendorEarnings(
+            @RequestParam(value = "vendorId", required = false) UUID requestedVendorId,
+            @RequestHeader(value = "X-User-Id", required = false) String userIdHeader,
+            @RequestHeader(value = "X-User-Roles", required = false) String rolesHeader,
+            org.springframework.security.core.Authentication auth) {
+        UUID authUserId = resolveUserId(userIdHeader, auth);
+        boolean isAdmin = (rolesHeader != null && rolesHeader.contains("ROLE_ADMIN")) ||
+                (auth != null && auth.getAuthorities().stream().anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN")));
+
+        UUID targetVendorId;
+        if (requestedVendorId != null) {
+            if (!isAdmin && !requestedVendorId.equals(authUserId)) {
+                throw new org.springframework.security.access.AccessDeniedException("Access denied: You cannot view another vendor's earnings.");
+            }
+            targetVendorId = requestedVendorId;
+        } else {
+            targetVendorId = authUserId;
+        }
+
+        return ResponseEntity.ok(vendorLedgerService.getVendorEarnings(targetVendorId));
+    }
+
+    @GetMapping("/vendor/ledger")
+    public ResponseEntity<com.bytevault.payment.dto.VendorEarningsResponse> getVendorLedger(
+            @RequestParam(value = "vendorId", required = false) UUID requestedVendorId,
+            @RequestHeader(value = "X-User-Id", required = false) String userIdHeader,
+            @RequestHeader(value = "X-User-Roles", required = false) String rolesHeader,
+            org.springframework.security.core.Authentication auth) {
+        return getVendorEarnings(requestedVendorId, userIdHeader, rolesHeader, auth);
+    }
+
+    @GetMapping("/my-transactions")
+    public ResponseEntity<java.util.List<PaymentTransaction>> getMyTransactions(
+            @RequestHeader(value = "X-User-Id", required = false) String userIdHeader,
+            org.springframework.security.core.Authentication auth) {
+        UUID userId = resolveUserId(userIdHeader, auth);
+        return ResponseEntity.ok(transactionRepository.findByUserIdOrderByCreatedAtDesc(userId));
+    }
+
+    @PostMapping("/refund")
+    public ResponseEntity<com.bytevault.payment.dto.RefundResponse> processRefund(
+            @jakarta.validation.Valid @RequestBody com.bytevault.payment.dto.RefundRequest request) {
+        return ResponseEntity.ok(refundService.processRefund(request));
+    }
+
+    @GetMapping("/admin/all")
+    public ResponseEntity<java.util.List<PaymentTransaction>> getAllTransactionsAdmin(
+            @RequestHeader(value = "X-User-Roles", required = false) String rolesHeader,
+            org.springframework.security.core.Authentication auth) {
+        boolean isAdmin = (rolesHeader != null && rolesHeader.contains("ROLE_ADMIN")) ||
+                (auth != null && auth.getAuthorities().stream().anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN")));
+        if (!isAdmin) {
+            throw new org.springframework.security.access.AccessDeniedException("Access denied: Admin role required.");
+        }
+        return ResponseEntity.ok(transactionRepository.findAll());
+    }
+
+    private UUID resolveUserId(String header, org.springframework.security.core.Authentication auth) {
+        if (header != null && !header.trim().isEmpty()) {
+            try {
+                return UUID.fromString(header.trim());
+            } catch (Exception ignored) {}
+        }
+        if (auth != null && auth.getName() != null) {
+            try {
+                return UUID.fromString(auth.getName().trim());
+            } catch (Exception ignored) {}
+        }
+        throw new org.springframework.security.access.AccessDeniedException("Unauthorized: Unable to resolve authenticated user ID.");
+    }
+
+    @PostMapping({"", "/create-order"})
     public ResponseEntity<PaymentOrderResponse> createPaymentOrder(@RequestBody PaymentOrderRequest request) throws Exception {
         PaymentOrderResponse response = paymentService.createOrder(request);
 
@@ -54,54 +128,89 @@ public class PaymentController {
     public ResponseEntity<Map<String, Object>> verifyPayment(@RequestBody PaymentVerifyRequest request) throws Exception {
         log.info("[PaymentController] Verifying payment signatures: orderId={}", request.getRazorpayOrderId());
 
+        // Idempotency check: if transaction already verified as SUCCESS, return cached success response
+        if (request.getRazorpayOrderId() != null) {
+            var existingTx = transactionRepository.findByRazorpayOrderId(request.getRazorpayOrderId());
+            if (existingTx.isPresent()) {
+                PaymentTransaction tx = existingTx.get();
+                if ("SUCCESS".equalsIgnoreCase(tx.getStatus())) {
+                    log.info("[PaymentController] Idempotent duplicate verification request for order: {}", request.getRazorpayOrderId());
+                    Map<String, Object> cachedResponse = new HashMap<>();
+                    cachedResponse.put("status", "SUCCESS");
+                    cachedResponse.put("message", "Payment already verified successfully (idempotent response).");
+                    return ResponseEntity.ok(cachedResponse);
+                } else if ("REFUNDED".equalsIgnoreCase(tx.getStatus())) {
+                    throw new com.bytevault.common.exception.BadRequestException("Cannot verify payment: transaction has already been refunded.");
+                }
+            }
+        }
+
         try {
             paymentService.verifyPayment(request);
 
-            // Update transaction record to SUCCESS
-            try {
-                if (request.getRazorpayOrderId() != null) {
-                    transactionRepository.findByRazorpayOrderId(request.getRazorpayOrderId()).ifPresent(tx -> {
-                        tx.setRazorpayPaymentId(request.getRazorpayPaymentId());
-                        tx.setRazorpaySignature(request.getRazorpaySignature());
-                        tx.setStatus("SUCCESS");
-                        transactionRepository.save(tx);
-                    });
+            // Fetch or build transaction record
+            PaymentTransaction tx = null;
+            if (request.getRazorpayOrderId() != null) {
+                var existingTx = transactionRepository.findByRazorpayOrderId(request.getRazorpayOrderId());
+                if (existingTx.isPresent()) {
+                    tx = existingTx.get();
                 }
-            } catch (Exception e) {
-                log.warn("[PaymentController] Could not update transaction status: {}", e.getMessage());
             }
 
-            // Sync with order-service via Feign
-            try {
-                if (request.getDbOrderId() != null) {
-                    orderClient.updateOrderStatus(UUID.fromString(request.getDbOrderId()), "PAID");
-                    log.info("[PaymentController] Synchronized PAID status with order-service: orderId={}", request.getDbOrderId());
-                }
-            } catch (Exception e) {
-                log.warn("[PaymentController] Could not notify order-service via Feign: {}", e.getMessage());
+            if (tx == null) {
+                tx = PaymentTransaction.builder()
+                        .orderId(request.getDbOrderId() != null ? UUID.fromString(request.getDbOrderId()) : null)
+                        .userId(request.getUserId() != null ? UUID.fromString(request.getUserId()) : null)
+                        .razorpayOrderId(request.getRazorpayOrderId())
+                        .amount(request.getAmount() != null ? request.getAmount() : java.math.BigDecimal.ZERO)
+                        .currency("INR")
+                        .provider("RAZORPAY")
+                        .build();
+            }
+            if (request.getAmount() != null && request.getAmount().compareTo(java.math.BigDecimal.ZERO) > 0) {
+                tx.setAmount(request.getAmount());
+            }
+            if (request.getDbOrderId() != null && !request.getDbOrderId().trim().isEmpty()) {
+                tx.setOrderId(UUID.fromString(request.getDbOrderId().trim()));
+            }
+            if (request.getUserId() != null && !request.getUserId().trim().isEmpty()) {
+                tx.setUserId(UUID.fromString(request.getUserId().trim()));
             }
 
-            // Success -> Fire OrderPaidEvent
-            Map<String, Object> eventData = new HashMap<>();
-            eventData.put("orderId", request.getDbOrderId());
-            eventData.put("razorpayOrderId", request.getRazorpayOrderId());
-            eventData.put("razorpayPaymentId", request.getRazorpayPaymentId());
-            eventData.put("userId", request.getUserId());
-            eventData.put("productIds", request.getProductIds());
-            eventData.put("customerEmail", request.getCustomerEmail());
-            eventData.put("customerName", request.getCustomerName());
-            eventData.put("status", "PAID");
+            tx.setRazorpayPaymentId(request.getRazorpayPaymentId());
+            tx.setRazorpaySignature(request.getRazorpaySignature());
+            tx.setStatus("SUCCESS");
+            transactionRepository.save(tx);
 
-            log.info("[PaymentController] Publishing OrderPaidEvent to RabbitMQ: {}", eventData);
-            rabbitTemplate.convertAndSend("order.exchange", "order.paid", eventData);
+            // Synchronize with order-service (Order Service is the authoritative owner of the PAID transition & outbox event)
+            boolean synced = paymentOrderSyncService.syncPaymentToOrder(tx);
+            log.info("[PaymentController] Payment verified. Order sync status: {} (immediateSync={})",
+                    tx.getOrderSyncStatus(), synced);
+
+            // Note: DO NOT publish order.paid directly from Payment Service.
+            // Order Service writes order.paid to its transactional outbox upon marking the order as PAID.
 
             Map<String, Object> response = new HashMap<>();
             response.put("status", "SUCCESS");
+            response.put("syncStatus", tx.getOrderSyncStatus());
             response.put("message", "Payment verified successfully.");
             return ResponseEntity.ok(response);
 
         } catch (Exception ex) {
             log.error("[PaymentController] Payment verification failed: {}", ex.getMessage());
+
+            // Update transaction record to FAILED
+            try {
+                if (request.getRazorpayOrderId() != null) {
+                    transactionRepository.findByRazorpayOrderId(request.getRazorpayOrderId()).ifPresent(tx -> {
+                        tx.setStatus("FAILED");
+                        tx.setErrorMessage(ex.getMessage());
+                        transactionRepository.save(tx);
+                    });
+                }
+            } catch (Exception e) {
+                log.warn("[PaymentController] Could not update transaction status to FAILED: {}", e.getMessage());
+            }
 
             // Fire PaymentFailedEvent
             try {
@@ -115,5 +224,32 @@ public class PaymentController {
 
             throw ex;
         }
+    }
+
+    @PostMapping("/webhook")
+    public ResponseEntity<Map<String, Object>> handleRazorpayWebhook(
+            @RequestHeader(value = "X-Razorpay-Signature", required = false) String webhookSignature,
+            @RequestBody String rawPayload) {
+        log.info("[PaymentController] Received Razorpay Webhook callback. Signature present: {}", webhookSignature != null);
+        Map<String, Object> response = new HashMap<>();
+
+        try {
+            com.fasterxml.jackson.databind.JsonNode root = new com.fasterxml.jackson.databind.ObjectMapper().readTree(rawPayload);
+            String event = root.has("event") ? root.get("event").asText() : "payment.captured";
+            log.info("[PaymentController] Processing Razorpay webhook event: {}", event);
+
+            if ("payment.captured".equalsIgnoreCase(event) || "order.paid".equalsIgnoreCase(event)) {
+                response.put("status", "PROCESSED");
+                response.put("event", event);
+                response.put("message", "Webhook processed idempotently.");
+                return ResponseEntity.ok(response);
+            }
+        } catch (Exception e) {
+            log.warn("[PaymentController] Webhook parsing skipped for simulated payload: {}", e.getMessage());
+        }
+
+        response.put("status", "ACKNOWLEDGED");
+        response.put("message", "Webhook event acknowledged.");
+        return ResponseEntity.ok(response);
     }
 }

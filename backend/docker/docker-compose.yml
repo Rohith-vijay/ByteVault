@@ -37,15 +37,35 @@ services:
     ports:
       - "5433:5432"
 
-  postgres-seller:
+  postgres-shipping:
     image: postgres:16-alpine
-    container_name: db-seller
+    container_name: db-shipping
     environment:
-      POSTGRES_DB: seller_db
+      POSTGRES_DB: shipping_db
       POSTGRES_USER: admin
       POSTGRES_PASSWORD: password
     ports:
-      - "5434:5432"
+      - "5489:5432"
+
+  postgres-warehouse:
+    image: postgres:16-alpine
+    container_name: db-warehouse
+    environment:
+      POSTGRES_DB: warehouse_db
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5492:5432"
+
+  postgres-notification:
+    image: postgres:16-alpine
+    container_name: db-notification
+    environment:
+      POSTGRES_DB: notification_db
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5490:5432"
 
   postgres-product:
     image: postgres:16-alpine

@@ -2,10 +2,33 @@ server:
   port: 8080
 
 spring:
+  main:
+    allow-bean-definition-overriding: true
+    web-application-type: reactive
   application:
     name: api-gateway
   cloud:
     gateway:
+      globalcors:
+        corsConfigurations:
+          '[/**]':
+            allowedOrigins:
+              - "http://localhost:5173"
+              - "http://127.0.0.1:5173"
+              - "http://localhost:3000"
+            allowedMethods:
+              - GET
+              - POST
+              - PUT
+              - PATCH
+              - DELETE
+              - OPTIONS
+              - HEAD
+            allowedHeaders:
+              - "*"
+            allowCredentials: true
+            maxAge: 3600
+        add-to-simple-url-handler-mapping: true
       discovery:
         locator:
           enabled: true
@@ -18,19 +41,16 @@ spring:
         - id: user-service
           uri: lb://user-service
           predicates:
-            - Path=/api/v1/users/**
-        - id: seller-service
-          uri: lb://seller-service
-          predicates:
-            - Path=/api/v1/sellers/**
+            - Path=/api/v1/users/**,/api/v1/admin/vendors/**
+
         - id: product-service
           uri: lb://product-service
           predicates:
             - Path=/api/v1/products/**
-        - id: inventory-service
-          uri: lb://inventory-service
+        - id: category-service
+          uri: lb://product-service
           predicates:
-            - Path=/api/v1/inventory/**
+            - Path=/api/v1/categories/**
         - id: cart-service
           uri: lb://cart-service
           predicates:
@@ -39,14 +59,30 @@ spring:
           uri: lb://order-service
           predicates:
             - Path=/api/v1/orders/**
+        - id: payment-service
+          uri: lb://payment-service
+          predicates:
+            - Path=/api/v1/payments/**
         - id: fulfillment-service
           uri: lb://fulfillment-service
           predicates:
-            - Path=/api/v1/fulfillments/**
+            - Path=/api/v1/fulfillment/**,/api/v1/fulfillments/**,/api/v1/downloads/**,/api/v1/entitlements/**
+        - id: inventory-service
+          uri: lb://inventory-service
+          predicates:
+            - Path=/api/v1/inventory/**
         - id: shipping-service
           uri: lb://shipping-service
           predicates:
             - Path=/api/v1/shipping/**
+        - id: warehouse-service
+          uri: lb://warehouse-service
+          predicates:
+            - Path=/api/v1/warehouses/**,/api/v1/warehouse/**
+        - id: support-service
+          uri: lb://support-service
+          predicates:
+            - Path=/api/v1/support/**
         - id: notification-service
           uri: lb://notification-service
           predicates:
@@ -63,3 +99,12 @@ app:
     secret: ${GATEWAY_SECRET:platform_default_gateway_shared_secret}
   jwt:
     secret: ${JWT_SECRET:default_super_secure_jwt_secret_placeholder_minimum_32_chars_long}
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+    enabled: true
+  swagger-ui:
+    path: /swagger-ui.html
+    enabled: true
+

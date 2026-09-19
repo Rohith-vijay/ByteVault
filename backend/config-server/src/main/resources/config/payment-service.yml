@@ -1,0 +1,15 @@
+server:
+  port: 8091
+
+spring:
+  datasource:
+    url: ${PAYMENT_DB_URL:jdbc:postgresql://localhost:5491/payment_db}
+    username: ${PAYMENT_DB_USER:admin}
+    password: ${PAYMENT_DB_PASS:password}
+  jpa:
+    hibernate:
+      ddl-auto: update
+
+razorpay:
+  key-id: ${RAZORPAY_KEY_ID:rzp_test_mock_123}
+  key-secret: ${RAZORPAY_KEY_SECRET:secret_test_mock_456}

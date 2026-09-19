@@ -20,4 +20,5 @@ public class PaymentVerifyRequest {
     private java.util.List<String> productIds;
     private String customerEmail;
     private String customerName;
+    private java.math.BigDecimal amount;
 }

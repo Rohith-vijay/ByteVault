@@ -1,0 +1,28 @@
+# Centralized Shared Configuration for ByteVault Media Platform
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_SERVER_URL:http://localhost:8761/eureka/}
+    registry-fetch-interval-seconds: 10
+  instance:
+    prefer-ip-address: true
+    lease-renewal-interval-in-seconds: 10
+    lease-expiration-duration-in-seconds: 30
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: when_authorized
+
+app:
+  gateway:
+    secret: ${GATEWAY_SECRET:platform_default_gateway_shared_secret}
+  jwt:
+    secret: ${JWT_SECRET:default_super_secure_jwt_secret_placeholder_minimum_32_chars_long}
+    expiration: 900000 # 15 mins
+  crypto:
+    encryption-key: ${ENCRYPTION_KEY:bytevault_default_aes_key_32_bytes!}

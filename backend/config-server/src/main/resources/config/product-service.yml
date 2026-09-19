@@ -1,0 +1,20 @@
+server:
+  port: 8084
+
+spring:
+  datasource:
+    url: ${PRODUCT_DB_URL:jdbc:postgresql://localhost:5435/product_db}
+    username: ${PRODUCT_DB_USER:admin}
+    password: ${PRODUCT_DB_PASS:password}
+  jpa:
+    hibernate:
+      ddl-auto: update
+
+app:
+  storage:
+    minio:
+      endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
+      access-key: ${MINIO_ACCESS_KEY:admin}
+      secret-key: ${MINIO_SECRET_KEY:password123}
+      bucket: bytevault-assets
+    local-fallback-dir: temp-assets

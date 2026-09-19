@@ -7,6 +7,7 @@ import jakarta.validation.constraints.Positive;
 import lombok.*;
 
 import java.math.BigDecimal;
+import java.util.UUID;
 
 @Getter
 @Setter
@@ -24,10 +25,20 @@ public class CreateProductRequest {
     @Positive(message = "Product price must be greater than zero")
     private BigDecimal price;
 
+    private String currency;
+
+    private String sku;
+
     @NotNull(message = "Product type is required")
     private ProductType productType;
 
     private Long categoryId;
+
+    private String tags;
+
+    private com.bytevault.product.entity.ProductStatus status;
+
+    private UUID vendorId; // Optional in request, overridden by JWT in vendor endpoints
 
     // Digital configs
     private String fileName;
@@ -39,4 +50,9 @@ public class CreateProductRequest {
     private String physicalSku;
     private Double physicalWeight;
     private String physicalDimensions;
+    private Double weight;
+    private Double length;
+    private Double width;
+    private Double height;
+    private String shippingClass;
 }

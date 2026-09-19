@@ -49,4 +49,18 @@ public class PaymentTransaction extends BaseAuditableEntity {
 
     @Column(name = "error_message")
     private String errorMessage;
+
+    @Column(name = "order_sync_status", length = 20)
+    @Builder.Default
+    private String orderSyncStatus = "PENDING"; // PENDING, SYNCED, FAILED
+
+    @Column(name = "sync_attempts", nullable = false)
+    @Builder.Default
+    private int syncAttempts = 0;
+
+    @Column(name = "last_sync_error", length = 1000)
+    private String lastSyncError;
+
+    @Column(name = "next_sync_retry_at")
+    private java.time.LocalDateTime nextSyncRetryAt;
 }

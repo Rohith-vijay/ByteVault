@@ -5,15 +5,15 @@ spring:
   application:
     name: product-service
   datasource:
-    url: ${DB_URL:jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5435}/product_db}
+    url: ${DB_URL:jdbc:h2:mem:product_db;DB_CLOSE_DELAY=-1;MODE=PostgreSQL}
     username: ${DB_USER:admin}
     password: ${DB_PASSWORD:password}
-    driver-class-name: org.postgresql.Driver
+    driver-class-name: ${DB_DRIVER:org.h2.Driver}
   jpa:
     hibernate:
       ddl-auto: update
     show-sql: false
-    database-platform: org.hibernate.dialect.PostgreSQLDialect
+    database-platform: ${DB_DIALECT:org.hibernate.dialect.H2Dialect}
   servlet:
     multipart:
       max-file-size: 50MB
@@ -30,5 +30,7 @@ app:
   storage:
     minio:
       endpoint: ${MINIO_ENDPOINT:}
+      access-key: ${MINIO_ACCESS_KEY:minioadmin}
+      secret-key: ${MINIO_SECRET_KEY:minioadmin}
       bucket: ${MINIO_BUCKET:bytevault-assets}
     local-fallback-dir: ${LOCAL_STORAGE_DIR:temp-assets}

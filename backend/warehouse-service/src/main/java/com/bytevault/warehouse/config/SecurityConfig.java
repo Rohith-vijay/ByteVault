@@ -26,7 +26,8 @@ public class SecurityConfig {
                 .cors(cors -> cors.disable())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/actuator/health", "/actuator/info", "/error").permitAll()
+                        .requestMatchers("/actuator/health", "/actuator/info", "/error", "/swagger-ui/**", "/v3/api-docs/**", "/swagger-ui.html").permitAll()
+                        .requestMatchers("/api/v1/warehouse/**", "/api/v1/warehouses/**").permitAll() // Microservice internal and gateway-authenticated communication
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(downstreamSecurityFilter, UsernamePasswordAuthenticationFilter.class);

@@ -25,8 +25,8 @@ public class DownstreamSecurityConfig {
                 .cors(cors -> cors.disable()) // Handled at gateway
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        // Expose actuator and error pages publicly (still protected by gateway secret filter check)
-                        .requestMatchers("/actuator/health", "/actuator/info", "/error").permitAll()
+                        // Expose actuator, error pages, and Swagger UI publicly
+                        .requestMatchers("/actuator/health", "/actuator/info", "/error", "/swagger-ui/**", "/v3/api-docs/**", "/swagger-ui.html").permitAll()
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(downstreamSecurityFilter, UsernamePasswordAuthenticationFilter.class);

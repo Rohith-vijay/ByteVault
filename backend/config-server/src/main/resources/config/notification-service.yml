@@ -1,0 +1,14 @@
+server:
+  port: 8090
+
+spring:
+  datasource:
+    url: ${NOTIFICATION_DB_URL:jdbc:postgresql://localhost:5490/notification_db}
+    username: ${NOTIFICATION_DB_USER:admin}
+    password: ${NOTIFICATION_DB_PASS:password}
+  jpa:
+    hibernate:
+      ddl-auto: update
+  mail:
+    host: ${MAIL_HOST:localhost}
+    port: ${MAIL_PORT:1025}

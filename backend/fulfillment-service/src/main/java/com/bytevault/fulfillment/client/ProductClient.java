@@ -15,4 +15,7 @@ public interface ProductClient {
     ResponseEntity<String> getDownloadUrlInternal(
             @PathVariable("id") UUID id,
             @RequestHeader("X-Gateway-Secret") String gatewaySecret);
+
+    @GetMapping("/api/v1/products/{id}")
+    ResponseEntity<String> getProductById(@PathVariable("id") UUID id);
 }

@@ -2,19 +2,20 @@ package com.bytevault.payment.service;
 
 import com.razorpay.Order;
 import com.razorpay.RazorpayClient;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.json.JSONObject;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.util.Optional;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class RazorpayClientService {
 
-    private final RazorpayClient razorpayClient;
+    @Autowired(required = false)
+    private RazorpayClient razorpayClient;
 
     public Order createOrder(BigDecimal amount, String currency, String receipt) throws Exception {
         if (razorpayClient == null) {
