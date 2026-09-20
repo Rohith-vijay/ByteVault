@@ -440,7 +440,7 @@ export const AdminDashboard = () => {
             <TabBtn active={activeTab === "moderation"} onClick={() => setActiveTab("moderation")}>
               <Box display="flex" alignItems="center" gap={1.5}>
                 <ModerationIcon style={{ fontSize: "18px", color: "#EC4899" }} />
-                <span>Product Moderation</span>
+                <span>Marketplace Catalog</span>
               </Box>
               <span style={{ fontSize: "12px", opacity: 0.6 }}>{products.length}</span>
             </TabBtn>
@@ -697,10 +697,10 @@ export const AdminDashboard = () => {
                   <Box display="flex" justifyContent="space-between" alignItems="center" mb={4} flexWrap="wrap" gap={3}>
                     <div>
                       <h2 style={{ margin: "0 0 4px 0", fontSize: "20px", fontWeight: 800, color: theme.palette.text.primary }}>
-                        Marketplace Product Moderation ({products.length})
+                        Marketplace Product Catalog ({products.length})
                       </h2>
                       <p style={{ margin: 0, fontSize: "13px", color: theme.palette.text.secondary }}>
-                        Direct publishing governance. Review marketplace listings, take down problematic items with reason, and reactivate listings.
+                        Live marketplace catalog governance. Approved vendors publish directly to the storefront; administrators oversee listings with policy takedown and reactivation controls.
                       </p>
                     </div>
 
