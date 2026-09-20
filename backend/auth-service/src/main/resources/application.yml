@@ -5,15 +5,20 @@ spring:
   application:
     name: auth-service
   datasource:
-    url: ${DB_URL:jdbc:h2:mem:auth_db;DB_CLOSE_DELAY=-1;MODE=PostgreSQL}
-    username: ${DB_USER:admin}
-    password: ${DB_PASSWORD:password}
-    driver-class-name: ${DB_DRIVER:org.h2.Driver}
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/auth_db}
+    username: ${DB_USER:postgres}
+    password: ${DB_PASSWORD:Rohith@358}
+    driver-class-name: ${DB_DRIVER:org.postgresql.Driver}
   jpa:
     hibernate:
       ddl-auto: update
     show-sql: false
-    database-platform: ${DB_DIALECT:org.hibernate.dialect.H2Dialect}
+    database-platform: ${DB_DIALECT:org.hibernate.dialect.PostgreSQLDialect}
+    properties:
+      hibernate:
+        jdbc:
+          lob:
+            non_contextual_creation: true
   data:
     redis:
       host: ${REDIS_HOST:localhost}
@@ -30,6 +35,6 @@ app:
     secret: ${GATEWAY_SECRET:platform_default_gateway_shared_secret}
   jwt:
     secret: ${JWT_SECRET:default_super_secure_jwt_secret_placeholder_minimum_32_chars_long}
-    expiration: ${JWT_EXPIRATION:900000} # 15 minutes
+    expiration: ${JWT_EXPIRATION:28800000} # 8 hours for Review 1
 jwt:
   refresh-expiration: ${JWT_REFRESH_EXPIRATION:604800000} # 7 days

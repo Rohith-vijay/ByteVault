@@ -5,15 +5,20 @@ spring:
   application:
     name: support-service
   datasource:
-    url: ${DB_URL:jdbc:h2:mem:support_db;DB_CLOSE_DELAY=-1;MODE=PostgreSQL}
-    username: ${DB_USER:admin}
-    password: ${DB_PASSWORD:password}
-    driver-class-name: ${DB_DRIVER:org.h2.Driver}
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/support_db}
+    username: ${DB_USER:postgres}
+    password: ${DB_PASSWORD:Rohith@358}
+    driver-class-name: ${DB_DRIVER:org.postgresql.Driver}
   jpa:
     hibernate:
       ddl-auto: update
     show-sql: false
-    database-platform: ${DB_DIALECT:org.hibernate.dialect.H2Dialect}
+    database-platform: ${DB_DIALECT:org.hibernate.dialect.PostgreSQLDialect}
+    properties:
+      hibernate:
+        jdbc:
+          lob:
+            non_contextual_creation: true
 
 eureka:
   client:
@@ -23,3 +28,4 @@ eureka:
 app:
   gateway:
     secret: ${GATEWAY_SECRET:platform_default_gateway_shared_secret}
+

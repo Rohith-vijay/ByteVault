@@ -1,0 +1,144 @@
+/* ByteVault Media - Global Stylesheet & Design System Foundation */
+
+:root {
+  /* Brand Core Colors */
+  --bv-navy-950: #050811;
+  --bv-navy-900: #070B16;
+  --bv-navy-850: #0B1020;
+  --bv-navy-800: #0F172A;
+  --bv-navy-700: #172033;
+  --bv-navy-600: #1E293B;
+  
+  --bv-slate-50: #F8FAFC;
+  --bv-slate-100: #F1F5F9;
+  --bv-slate-200: #E2E8F0;
+  --bv-slate-300: #CBD5E1;
+  --bv-slate-400: #94A3B8;
+  --bv-slate-500: #64748B;
+  --bv-slate-600: #475569;
+  --bv-slate-700: #334155;
+  --bv-slate-800: #1E293B;
+  --bv-slate-900: #0F172A;
+
+  --bv-blue-500: #3B82F6;
+  --bv-blue-600: #2563EB;
+  --bv-blue-700: #1D4ED8;
+  --bv-blue-400: #60A5FA;
+  --bv-blue-100: #DBEAFE;
+  --bv-blue-50: #EFF6FF;
+
+  --bv-purple-600: #7C3AED;
+  --bv-purple-700: #6D28D9;
+  --bv-purple-500: #8B5CF6;
+  --bv-purple-400: #A78BFA;
+  --bv-purple-100: #EDE9FE;
+  --bv-purple-50: #F5F3FF;
+
+  --bv-emerald-500: #10B981;
+  --bv-amber-500: #F59E0B;
+  --bv-rose-500: #EF4444;
+  --bv-cyan-500: #06B6D4;
+
+  /* Typography */
+  --font-sans: "Plus Jakarta Sans", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+  /* Spacing Grid */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+  --space-20: 80px;
+  --space-24: 96px;
+
+  /* Transitions */
+  --ease-spring: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-smooth: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  font-size: 16px;
+  font-family: var(--font-sans);
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  scroll-behavior: smooth;
+  color: var(--bv-slate-800);
+  background-color: var(--bv-slate-50);
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  background-color: var(--bv-slate-50);
+  color: var(--bv-slate-900);
+  font-family: var(--font-sans);
+  overflow-x: hidden;
+}
+
+#root {
+  width: 100%;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+}
+
+/* Custom Selection */
+::selection {
+  background-color: rgba(124, 58, 237, 0.2);
+  color: #5B21B6;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bv-slate-100);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--bv-slate-300);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--bv-slate-400);
+}
+
+/* Code styling */
+code, pre, kbd {
+  font-family: var(--font-mono);
+}
+
+/* Accessible focus ring */
+:focus-visible {
+  outline: 2px solid var(--bv-purple-600);
+  outline-offset: 2px;
+}
+
+/* Animations respect reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -33,8 +33,12 @@ public class OrderService {
     private final com.bytevault.order.client.InventoryClient inventoryClient;
     private final RabbitTemplate rabbitTemplate;
 
-    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    @org.springframework.beans.factory.annotation.Autowired
     private com.bytevault.order.client.FulfillmentClient fulfillmentClient;
+
+    public void setFulfillmentClient(com.bytevault.order.client.FulfillmentClient fulfillmentClient) {
+        this.fulfillmentClient = fulfillmentClient;
+    }
 
     @org.springframework.beans.factory.annotation.Value("${app.gateway.secret:platform_default_gateway_shared_secret}")
     private String gatewaySecret;
@@ -327,20 +331,24 @@ public class OrderService {
                 log.info("[OrderService] Transactional outbox event created atomically for orderId={}", orderId);
             }
 
-            // Direct fulfillment dispatch for zero-latency customer entitlement
-            try {
-                if (fulfillmentClient != null) {
-                    List<UUID> digitalProductIds = savedOrder.getItems().stream()
-                            .filter(item -> Boolean.TRUE.equals(item.getIsDigital()) || "DIGITAL".equalsIgnoreCase(item.getProductType()))
-                            .map(com.bytevault.order.entity.OrderItem::getProductId)
-                            .collect(Collectors.toList());
-                    if (!digitalProductIds.isEmpty()) {
-                        fulfillmentClient.fulfillOrderInternal(gatewaySecret, "ROLE_INTERNAL_SERVICE", savedOrder.getId(), savedOrder.getUserId(), digitalProductIds);
-                        log.info("[OrderService] Direct digital fulfillment dispatched successfully for order {}", savedOrder.getId());
-                    }
+            // Direct synchronous fulfillment dispatch for immediate customer entitlement (NO RabbitMQ dependency)
+            List<UUID> digitalProductIds = savedOrder.getItems().stream()
+                    .filter(item -> Boolean.TRUE.equals(item.getIsDigital()) || "DIGITAL".equalsIgnoreCase(item.getProductType()))
+                    .map(com.bytevault.order.entity.OrderItem::getProductId)
+                    .collect(Collectors.toList());
+            if (!digitalProductIds.isEmpty()) {
+                if (fulfillmentClient == null) {
+                    log.error("[OrderService] CRITICAL: fulfillmentClient is null. Digital fulfillment cannot proceed for order {}", savedOrder.getId());
+                    throw new IllegalStateException("Fulfillment service client unavailable for digital order " + savedOrder.getId());
                 }
-            } catch (Exception ex) {
-                log.warn("[OrderService] Direct fulfillment dispatch error: {}", ex.getMessage());
+                log.info("[OrderService] Triggering synchronous digital fulfillment for order {} ({} digital items)", savedOrder.getId(), digitalProductIds.size());
+                try {
+                    fulfillmentClient.fulfillOrderInternal(gatewaySecret, "ROLE_INTERNAL_SERVICE", savedOrder.getId(), savedOrder.getUserId(), digitalProductIds);
+                    log.info("[OrderService] Immediate synchronous digital fulfillment succeeded for order {}", savedOrder.getId());
+                } catch (Exception ex) {
+                    log.error("[OrderService] CRITICAL: Synchronous digital fulfillment failed for order {}: {}", savedOrder.getId(), ex.getMessage(), ex);
+                    throw new RuntimeException("Digital product fulfillment failed for order " + savedOrder.getId() + ": " + ex.getMessage(), ex);
+                }
             }
         } catch (Exception e) {
             log.error("[OrderService] Failed to persist outbox event for order {}. Rolling back transaction.", orderId, e);

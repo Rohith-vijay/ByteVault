@@ -44,3 +44,10 @@ Thumbs.db
 .env
 docker/data/
 docker/db_data/
+.pgdata/
+.runners/
+.bytevault-pids.json
+backend/temp-assets/
+node_modules/
+dist/
+
