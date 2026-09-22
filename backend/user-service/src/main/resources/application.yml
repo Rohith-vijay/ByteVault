@@ -23,7 +23,7 @@ spring:
   rabbitmq:
     listener:
       simple:
-        auto-startup: ${RABBITMQ_ENABLED:true}
+        auto-startup: ${RABBITMQ_ENABLED:false}
 
 eureka:
   client:

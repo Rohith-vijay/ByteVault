@@ -292,6 +292,7 @@ public class AuthService {
                 .token(accessToken)
                 .refreshToken(refreshToken.getToken())
                 .user(AuthenticationResponse.UserDto.builder()
+                        .id(credentials.getId())
                         .name(fullName != null ? fullName : credentials.getUsername())
                         .email(credentials.getUsername())
                         .role(credentials.getRole().name())

@@ -40,6 +40,7 @@ export const AuthProvider = ({ children }) => {
     setUser(null);
     setToken(null);
     localStorage.removeItem("bytevault_auth_token");
+    localStorage.removeItem("bytevault_refresh_token");
     localStorage.removeItem("bytevault_user");
     if (currentUserId) {
       localStorage.removeItem(`bytevault_cart_${currentUserId}`);
@@ -111,13 +112,20 @@ export const AuthProvider = ({ children }) => {
   // Perform session token refresh rotation
   const refreshSession = async () => {
     try {
-      const res = await authService.refresh();
-      setToken(res.token);
-      localStorage.setItem("bytevault_auth_token", res.token);
-      
-      const profile = await apiClient.get("/users/me");
-      setUser(profile);
-      return profile;
+      const storedRefresh = localStorage.getItem("bytevault_refresh_token");
+      const res = await authService.refresh(storedRefresh);
+      if (res?.token) {
+        setToken(res.token);
+        localStorage.setItem("bytevault_auth_token", res.token);
+      }
+      if (res?.refreshToken) {
+        localStorage.setItem("bytevault_refresh_token", res.refreshToken);
+      }
+      if (res?.user) {
+        setUser(res.user);
+        localStorage.setItem("bytevault_user", JSON.stringify(res.user));
+      }
+      return res?.user || user;
     } catch (err) {
       console.error("Token session refresh failure", err);
       logout();
@@ -145,7 +153,9 @@ export const AuthProvider = ({ children }) => {
       const res = await authService.login(email, password);
       setUser(res.user);
       setToken(res.token);
-      localStorage.setItem("bytevault_auth_token", res.token);
+      if (res.token) localStorage.setItem("bytevault_auth_token", res.token);
+      if (res.refreshToken) localStorage.setItem("bytevault_refresh_token", res.refreshToken);
+      if (res.user) localStorage.setItem("bytevault_user", JSON.stringify(res.user));
       setLoading(false);
       return res.user;
     } catch (err) {
@@ -168,7 +178,9 @@ export const AuthProvider = ({ children }) => {
       const res = await authService.register(payload);
       setUser(res.user);
       setToken(res.token);
-      localStorage.setItem("bytevault_auth_token", res.token);
+      if (res.token) localStorage.setItem("bytevault_auth_token", res.token);
+      if (res.refreshToken) localStorage.setItem("bytevault_refresh_token", res.refreshToken);
+      if (res.user) localStorage.setItem("bytevault_user", JSON.stringify(res.user));
       setLoading(false);
       return res.user;
     } catch (err) {

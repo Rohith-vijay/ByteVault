@@ -33,16 +33,22 @@ public class DownstreamSecurityFilter implements Filter {
             throws IOException, ServletException {
         
         if (request instanceof HttpServletRequest httpRequest && response instanceof HttpServletResponse httpResponse) {
-            String incomingSecret = httpRequest.getHeader(GATEWAY_SECRET_HEADER);
-            
             String uri = httpRequest.getRequestURI();
-            // Allow direct access to Swagger UI, OpenAPI docs, Actuator, and signed download streaming
-            if (uri.startsWith("/swagger-ui") || uri.startsWith("/v3/api-docs") || uri.startsWith("/actuator") || uri.contains("swagger") || uri.contains("api-docs") || uri.startsWith("/api/v1/products/assets/download")) {
+            String referer = httpRequest.getHeader("Referer");
+            String origin = httpRequest.getHeader("Origin");
+            boolean isSwaggerRequest = (referer != null && referer.contains("swagger")) 
+                                    || (origin != null && origin.contains("swagger"));
+
+            // Allow direct access to Swagger UI, OpenAPI docs, Actuator, signed download streaming, public auth endpoints, or direct execution from Swagger UI
+            if (uri.startsWith("/swagger-ui") || uri.startsWith("/v3/api-docs") || uri.startsWith("/actuator") 
+                || uri.contains("swagger") || uri.contains("api-docs") || uri.startsWith("/api/v1/products/assets/download")
+                || uri.startsWith("/api/v1/auth/") || isSwaggerRequest) {
                 chain.doFilter(request, response);
                 return;
             }
 
             // Block direct external access bypassing API Gateway
+            String incomingSecret = httpRequest.getHeader(GATEWAY_SECRET_HEADER);
             if (incomingSecret == null || !incomingSecret.equals(gatewaySecret)) {
                 log.warn("Blocked direct access attempt to: {}. Invalid gateway secret.", httpRequest.getRequestURI());
                 httpResponse.setStatus(HttpServletResponse.SC_FORBIDDEN);

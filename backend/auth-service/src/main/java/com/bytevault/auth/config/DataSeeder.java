@@ -40,5 +40,16 @@ public class DataSeeder implements CommandLineRunner {
             credentialsRepository.save(customer);
             log.info("[DataSeeder] Initialized default customer account: customer@bytevault.com");
         }
+
+        if (credentialsRepository.findByUsername("vendor@bytevault.com").isEmpty()) {
+            AuthCredentials vendor = AuthCredentials.builder()
+                    .username("vendor@bytevault.com")
+                    .password(passwordEncoder.encode("VendorPass123!"))
+                    .role(Role.VENDOR)
+                    .isActive(true)
+                    .build();
+            credentialsRepository.save(vendor);
+            log.info("[DataSeeder] Initialized default vendor account: vendor@bytevault.com");
+        }
     }
 }

@@ -44,8 +44,8 @@ public class JwtGatewayFilter implements WebFilter, Ordered {
     private final java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.atomic.AtomicInteger> requestCounts = new java.util.concurrent.ConcurrentHashMap<>();
     private final java.util.concurrent.ConcurrentHashMap<String, Long> windowStartTimes = new java.util.concurrent.ConcurrentHashMap<>();
     
-    @Value("${app.rate-limit.requests-per-minute:100}")
-    private int maxRequestsPerMinute = 100;
+    @Value("${app.rate-limit.requests-per-minute:5000}")
+    private int maxRequestsPerMinute = 5000;
 
     private boolean isRateLimited(String clientKey) {
         long now = System.currentTimeMillis();
@@ -81,17 +81,25 @@ public class JwtGatewayFilter implements WebFilter, Ordered {
         String path = request.getURI().getPath();
         HttpMethod method = request.getMethod();
 
-        // Rate Limiting check on sensitive paths
-        String clientIp = request.getRemoteAddress() != null ? request.getRemoteAddress().getAddress().getHostAddress() : "anonymous";
-        String rateLimitKey = clientIp + ":" + (path.startsWith("/api/v1/auth") ? "auth" : "general");
-        
-        if (isRateLimited(rateLimitKey)) {
-            log.warn("Rate limit exceeded for key: {}", rateLimitKey);
-            response.setStatusCode(HttpStatus.TOO_MANY_REQUESTS);
-            response.getHeaders().setContentType(org.springframework.http.MediaType.APPLICATION_JSON);
-            return response.writeWith(Mono.just(response.bufferFactory().wrap(
-                    "{\"success\":false,\"message\":\"Rate limit exceeded. Please try again later.\"}"
-                    .getBytes(StandardCharsets.UTF_8))));
+        boolean isDocOrOption = HttpMethod.OPTIONS.equals(method)
+                || path.startsWith("/swagger-ui")
+                || path.startsWith("/v3/api-docs")
+                || path.startsWith("/actuator")
+                || path.startsWith("/webjars");
+
+        // Rate Limiting check on API paths
+        if (!isDocOrOption) {
+            String clientIp = request.getRemoteAddress() != null ? request.getRemoteAddress().getAddress().getHostAddress() : "anonymous";
+            String rateLimitKey = clientIp + ":" + (path.startsWith("/api/v1/auth") ? "auth" : "general");
+            
+            if (isRateLimited(rateLimitKey)) {
+                log.warn("Rate limit exceeded for key: {}", rateLimitKey);
+                response.setStatusCode(HttpStatus.TOO_MANY_REQUESTS);
+                response.getHeaders().setContentType(org.springframework.http.MediaType.APPLICATION_JSON);
+                return response.writeWith(Mono.just(response.bufferFactory().wrap(
+                        "{\"success\":false,\"message\":\"Rate limit exceeded. Please try again later.\"}"
+                        .getBytes(StandardCharsets.UTF_8))));
+            }
         }
 
         // 2. Short-circuit ALL OPTIONS (CORS preflight) requests HERE.
