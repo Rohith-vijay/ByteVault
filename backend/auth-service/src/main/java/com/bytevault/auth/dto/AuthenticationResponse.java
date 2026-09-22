@@ -17,6 +17,7 @@ public class AuthenticationResponse {
     @NoArgsConstructor
     @AllArgsConstructor
     public static class UserDto {
+        private java.util.UUID id;
         private String name;
         private String email;
         private String role;

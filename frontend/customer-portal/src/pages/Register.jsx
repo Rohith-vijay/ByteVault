@@ -147,8 +147,8 @@ export const Register = () => {
     e.preventDefault();
     setFormError(null);
 
-    if (password.length < 6) {
-      setFormError("Password must be at least 6 characters long.");
+    if (password.length < 8) {
+      setFormError("Password must be at least 8 characters long.");
       return;
     }
 
@@ -172,7 +172,7 @@ export const Register = () => {
       } : {};
 
       await register(name, email, password, role, vendorData);
-      navigate("/email-verification", { replace: true });
+      navigate("/", { replace: true });
     } catch (err) {
       setFormError(err.message || "Registration failed. Please try again.");
     } finally {

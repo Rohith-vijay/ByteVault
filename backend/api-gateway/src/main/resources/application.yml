@@ -87,6 +87,78 @@ spring:
           uri: lb://notification-service
           predicates:
             - Path=/api/v1/notifications/**
+        - id: auth-docs
+          uri: lb://auth-service
+          predicates:
+            - Path=/v3/api-docs/auth-service
+          filters:
+            - SetPath=/v3/api-docs
+        - id: user-docs
+          uri: lb://user-service
+          predicates:
+            - Path=/v3/api-docs/user-service
+          filters:
+            - SetPath=/v3/api-docs
+        - id: product-docs
+          uri: lb://product-service
+          predicates:
+            - Path=/v3/api-docs/product-service
+          filters:
+            - SetPath=/v3/api-docs
+        - id: order-docs
+          uri: lb://order-service
+          predicates:
+            - Path=/v3/api-docs/order-service
+          filters:
+            - SetPath=/v3/api-docs
+        - id: cart-docs
+          uri: lb://cart-service
+          predicates:
+            - Path=/v3/api-docs/cart-service
+          filters:
+            - SetPath=/v3/api-docs
+        - id: payment-docs
+          uri: lb://payment-service
+          predicates:
+            - Path=/v3/api-docs/payment-service
+          filters:
+            - SetPath=/v3/api-docs
+        - id: inventory-docs
+          uri: lb://inventory-service
+          predicates:
+            - Path=/v3/api-docs/inventory-service
+          filters:
+            - SetPath=/v3/api-docs
+        - id: fulfillment-docs
+          uri: lb://fulfillment-service
+          predicates:
+            - Path=/v3/api-docs/fulfillment-service
+          filters:
+            - SetPath=/v3/api-docs
+        - id: shipping-docs
+          uri: lb://shipping-service
+          predicates:
+            - Path=/v3/api-docs/shipping-service
+          filters:
+            - SetPath=/v3/api-docs
+        - id: warehouse-docs
+          uri: lb://warehouse-service
+          predicates:
+            - Path=/v3/api-docs/warehouse-service
+          filters:
+            - SetPath=/v3/api-docs
+        - id: support-docs
+          uri: lb://support-service
+          predicates:
+            - Path=/v3/api-docs/support-service
+          filters:
+            - SetPath=/v3/api-docs
+        - id: notification-docs
+          uri: lb://notification-service
+          predicates:
+            - Path=/v3/api-docs/notification-service
+          filters:
+            - SetPath=/v3/api-docs
 
 eureka:
   client:
@@ -107,4 +179,29 @@ springdoc:
   swagger-ui:
     path: /swagger-ui.html
     enabled: true
+    urls:
+      - name: 1. Auth Service (Tokens & Login)
+        url: /v3/api-docs/auth-service
+      - name: 2. User Service
+        url: /v3/api-docs/user-service
+      - name: 3. Product Service
+        url: /v3/api-docs/product-service
+      - name: 4. Order Service
+        url: /v3/api-docs/order-service
+      - name: 5. Cart Service
+        url: /v3/api-docs/cart-service
+      - name: 6. Payment Service
+        url: /v3/api-docs/payment-service
+      - name: 7. Inventory Service
+        url: /v3/api-docs/inventory-service
+      - name: 8. Fulfillment Service
+        url: /v3/api-docs/fulfillment-service
+      - name: 9. Shipping Service
+        url: /v3/api-docs/shipping-service
+      - name: 10. Warehouse Service
+        url: /v3/api-docs/warehouse-service
+      - name: 11. Support Service
+        url: /v3/api-docs/support-service
+      - name: 12. Notification Service
+        url: /v3/api-docs/notification-service
 

@@ -1354,15 +1354,23 @@ const request = async (method, url, data = null, options = {}) => {
       const errMsg = errBody.message || (response.status === 401 ? "Invalid credentials. Please verify your email and password." : `HTTP Server returned error status ${response.status}`);
       
       const isLoginOrAuth = url.includes("/auth/login") || url.includes("/auth/register") || url.includes("/auth/refresh");
-      if (response.status === 401 && !isLoginOrAuth) {
+      const storedRefreshToken = localStorage.getItem("bytevault_refresh_token");
+
+      if (response.status === 401 && !isLoginOrAuth && storedRefreshToken) {
         try {
           const refreshRes = await fetch(`${API_BASE_URL}/auth/refresh`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" }
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ refreshToken: storedRefreshToken })
           });
           if (refreshRes.ok) {
-            const { token: newToken } = await refreshRes.json();
-            localStorage.setItem("bytevault_auth_token", newToken);
+            const refreshData = await refreshRes.json();
+            const payload = (refreshData && typeof refreshData === 'object' && 'data' in refreshData) ? refreshData.data : refreshData;
+            const newToken = payload.token || payload;
+            const newRefreshToken = payload.refreshToken;
+
+            if (newToken) localStorage.setItem("bytevault_auth_token", newToken);
+            if (newRefreshToken) localStorage.setItem("bytevault_refresh_token", newRefreshToken);
             
             const retryResponse = await fetch(`${API_BASE_URL}${url}`, {
               ...options,
@@ -1384,6 +1392,7 @@ const request = async (method, url, data = null, options = {}) => {
         }
         
         localStorage.removeItem("bytevault_auth_token");
+        localStorage.removeItem("bytevault_refresh_token");
         window.dispatchEvent(new Event("bytevault_unauthorized"));
       }
 

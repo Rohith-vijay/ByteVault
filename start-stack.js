@@ -41,7 +41,17 @@ function startService(svc) {
   const errLog = fs.openSync(path.join(logsDir, `${svc.name}-error.log`), 'a');
 
   console.log(`[STARTING] ${svc.name} on port :${svc.port}...`);
-  const child = spawn('java', ['-Xms128m', '-Xmx384m', '-jar', jarPath], {
+  const child = spawn('java', [
+    '-Xms48m',
+    '-Xmx200m',
+    '-XX:MetaspaceSize=64m',
+    '-XX:MaxMetaspaceSize=140m',
+    '-Xss256k',
+    '-XX:+TieredCompilation',
+    '-XX:TieredStopAtLevel=1',
+    '-jar',
+    jarPath
+  ], {
     cwd: backendDir,
     stdio: ['ignore', outLog, errLog],
     detached: false

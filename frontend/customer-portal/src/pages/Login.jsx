@@ -46,13 +46,13 @@ export const Login = () => {
   const handleAutofill = (roleType) => {
     if (roleType === "VENDOR") {
       setEmail("vendor@bytevault.com");
-      setPassword("vendor123");
+      setPassword("VendorPass123!");
     } else if (roleType === "ADMIN") {
       setEmail("admin@bytevault.com");
-      setPassword("admin123");
+      setPassword("AdminPass123!");
     } else {
       setEmail("customer@bytevault.com");
-      setPassword("password123");
+      setPassword("CustomerPass123!");
     }
   };
 
