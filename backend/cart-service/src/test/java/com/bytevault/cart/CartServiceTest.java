@@ -4,6 +4,10 @@ import com.bytevault.cart.client.ProductClient;
 import com.bytevault.cart.dto.CartItemDto;
 import com.bytevault.cart.dto.CartResponseDto;
 import com.bytevault.cart.dto.ProductSummaryResponse;
+import com.bytevault.cart.entity.Cart;
+import com.bytevault.cart.entity.CartItem;
+import com.bytevault.cart.repository.CartItemRepository;
+import com.bytevault.cart.repository.CartRepository;
 import com.bytevault.cart.service.CartService;
 import com.bytevault.common.exception.BadRequestException;
 import com.bytevault.common.exception.ResourceNotFoundException;
@@ -11,14 +15,18 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.data.redis.core.RedisTemplate;
-import org.springframework.data.redis.core.ValueOperations;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.TransactionException;
+import org.springframework.transaction.TransactionStatus;
+import org.springframework.transaction.support.SimpleTransactionStatus;
 
 import java.math.BigDecimal;
-import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -29,24 +37,30 @@ import static org.mockito.Mockito.*;
 public class CartServiceTest {
 
     @Mock
-    private RedisTemplate<String, Object> redisTemplate;
+    private CartRepository cartRepository;
 
     @Mock
-    private ValueOperations<String, Object> valueOperations;
+    private CartItemRepository cartItemRepository;
 
     @Mock
     private ProductClient productClient;
 
-    @InjectMocks
+    @Mock
+    private PlatformTransactionManager transactionManager;
+
     private CartService cartService;
 
     @BeforeEach
     void setUp() {
-        lenient().when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        // Setup transaction manager mock so TransactionTemplate executes smoothly
+        lenient().when(transactionManager.getTransaction(any(TransactionDefinition.class)))
+                .thenReturn(new SimpleTransactionStatus());
+
+        cartService = new CartService(cartRepository, cartItemRepository, productClient, transactionManager);
     }
 
     @Test
-    @DisplayName("Add item to cart with PUBLISHED product validation and authoritative price sync")
+    @DisplayName("Add item to cart with PUBLISHED product validation and authoritative snapshot sync")
     void testAddItemToCart_PublishedProduct() {
         UUID productId = UUID.randomUUID();
         String userId = "user-123";
@@ -60,242 +74,348 @@ public class CartServiceTest {
                 .build();
 
         when(productClient.getProductById(productId)).thenReturn(product);
-        when(valueOperations.get("cart:" + userId)).thenReturn(new CartResponseDto());
 
-        // Client passes arbitrary unverified price
-        CartItemDto item = CartItemDto.builder()
+        Cart cart = Cart.builder().userId(userId).items(new ArrayList<>()).build();
+        when(cartRepository.findByUserId(userId)).thenReturn(Optional.of(cart));
+        when(cartRepository.saveAndFlush(any(Cart.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        CartItemDto inputDto = CartItemDto.builder()
                 .productId(productId)
-                .productName("Fake Name")
-                .unitPrice(BigDecimal.valueOf(1.00))
                 .quantity(2)
                 .build();
 
-        CartResponseDto cart = cartService.addItem(userId, item);
+        CartResponseDto result = cartService.addItem(userId, inputDto);
 
-        assertNotNull(cart);
-        assertEquals(1, cart.getItems().size());
-        assertEquals("Spring in Action", cart.getItems().get(0).getProductName());
-        assertEquals(BigDecimal.valueOf(599.00), cart.getItems().get(0).getUnitPrice());
-        assertEquals(BigDecimal.valueOf(1198.00).setScale(2), cart.getTotalAmount());
-        assertEquals(2, cart.getTotalItems());
-        verify(valueOperations, times(1)).set(eq("cart:" + userId), any(CartResponseDto.class), eq(Duration.ofDays(7)));
+        assertNotNull(result);
+        assertEquals(1, result.getItems().size());
+        assertEquals(2, result.getTotalItems());
+        assertEquals(BigDecimal.valueOf(1198.00).setScale(2), result.getTotalAmount());
+
+        CartItemDto savedItem = result.getItems().get(0);
+        assertEquals(productId, savedItem.getProductId());
+        assertEquals("Spring in Action", savedItem.getProductName());
+        assertEquals(BigDecimal.valueOf(599.00), savedItem.getUnitPrice());
+        assertEquals(2, savedItem.getQuantity());
+        assertFalse(savedItem.getIsDigital());
+
+        verify(cartRepository, times(1)).saveAndFlush(any(Cart.class));
     }
 
     @Test
-    @DisplayName("Digital product quantity is strictly capped to 1")
-    void testAddItemToCart_DigitalProductQuantityCapped() {
-        UUID productId = UUID.randomUUID();
-        String userId = "user-123";
-
-        ProductSummaryResponse digitalProduct = ProductSummaryResponse.builder()
-                .id(productId)
-                .name("Cloud Architecture Guide")
-                .price(BigDecimal.valueOf(149.99))
-                .productType("DIGITAL")
-                .status("PUBLISHED")
-                .build();
-
-        when(productClient.getProductById(productId)).thenReturn(digitalProduct);
-        when(valueOperations.get("cart:" + userId)).thenReturn(new CartResponseDto());
-
-        CartItemDto item = CartItemDto.builder()
-                .productId(productId)
-                .quantity(5) // Attempt to add 5 digital licenses
-                .build();
-
-        CartResponseDto cart = cartService.addItem(userId, item);
-
-        assertNotNull(cart);
-        assertEquals(1, cart.getItems().size());
-        assertEquals(1, cart.getItems().get(0).getQuantity()); // Capped to 1
-        assertTrue(cart.getItems().get(0).getIsDigital());
-        assertEquals(BigDecimal.valueOf(149.99), cart.getTotalAmount());
-    }
-
-    @Test
-    @DisplayName("Add item with legacy ACTIVE status is accepted")
-    void testAddItemToCart_ActiveProduct() {
-        UUID productId = UUID.randomUUID();
-        String userId = "user-123";
-
-        ProductSummaryResponse product = ProductSummaryResponse.builder()
-                .id(productId)
-                .name("Legacy Active Item")
-                .price(BigDecimal.valueOf(299.00))
-                .productType("PHYSICAL")
-                .status("ACTIVE")
-                .build();
-
-        when(productClient.getProductById(productId)).thenReturn(product);
-        when(valueOperations.get("cart:" + userId)).thenReturn(new CartResponseDto());
-
-        CartItemDto item = CartItemDto.builder()
-                .productId(productId)
-                .quantity(1)
-                .build();
-
-        CartResponseDto cart = cartService.addItem(userId, item);
-
-        assertNotNull(cart);
-        assertEquals(1, cart.getItems().size());
-        assertEquals("Legacy Active Item", cart.getItems().get(0).getProductName());
-    }
-
-    @Test
-    @DisplayName("Add DRAFT product to cart -> Throws BadRequestException")
-    void testAddDraftProduct_ThrowsBadRequestException() {
+    @DisplayName("Reject adding DRAFT product with BadRequestException")
+    void testAddItemToCart_DraftProductRejection() {
         UUID productId = UUID.randomUUID();
         String userId = "user-123";
 
         ProductSummaryResponse draftProduct = ProductSummaryResponse.builder()
                 .id(productId)
-                .name("Draft Product")
-                .price(BigDecimal.valueOf(100.00))
+                .name("Unpublished E-Book")
+                .price(BigDecimal.valueOf(199.00))
+                .productType("DIGITAL")
                 .status("DRAFT")
                 .build();
 
         when(productClient.getProductById(productId)).thenReturn(draftProduct);
 
-        CartItemDto item = CartItemDto.builder()
+        CartItemDto inputDto = CartItemDto.builder()
                 .productId(productId)
                 .quantity(1)
                 .build();
 
-        BadRequestException ex = assertThrows(BadRequestException.class, () -> cartService.addItem(userId, item));
-        assertTrue(ex.getMessage().contains("Cannot add non-published product"));
-        verify(valueOperations, never()).set(any(), any(), any());
+        assertThrows(BadRequestException.class, () -> cartService.addItem(userId, inputDto));
+        verify(cartRepository, never()).saveAndFlush(any(Cart.class));
     }
 
     @Test
-    @DisplayName("Add DEACTIVATED product to cart -> Throws BadRequestException")
-    void testAddDeactivatedProduct_ThrowsBadRequestException() {
+    @DisplayName("Reject adding INACTIVE product with BadRequestException")
+    void testAddItemToCart_InactiveProductRejection() {
         UUID productId = UUID.randomUUID();
         String userId = "user-123";
 
-        ProductSummaryResponse deactivated = ProductSummaryResponse.builder()
+        ProductSummaryResponse inactiveProduct = ProductSummaryResponse.builder()
                 .id(productId)
-                .name("Deactivated Product")
-                .price(BigDecimal.valueOf(100.00))
-                .status("DEACTIVATED")
+                .name("Deprecated Library")
+                .price(BigDecimal.valueOf(99.00))
+                .productType("DIGITAL")
+                .status("INACTIVE")
                 .build();
 
-        when(productClient.getProductById(productId)).thenReturn(deactivated);
+        when(productClient.getProductById(productId)).thenReturn(inactiveProduct);
 
-        CartItemDto item = CartItemDto.builder()
+        CartItemDto inputDto = CartItemDto.builder()
                 .productId(productId)
                 .quantity(1)
                 .build();
 
-        assertThrows(BadRequestException.class, () -> cartService.addItem(userId, item));
+        assertThrows(BadRequestException.class, () -> cartService.addItem(userId, inputDto));
+        verify(cartRepository, never()).saveAndFlush(any(Cart.class));
     }
 
     @Test
-    @DisplayName("Add nonexistent product to cart -> Throws ResourceNotFoundException")
-    void testAddNonexistentProduct_ThrowsResourceNotFoundException() {
+    @DisplayName("Enforce single quantity cap for DIGITAL products")
+    void testAddItemToCart_DigitalProductQuantityCapping() {
         UUID productId = UUID.randomUUID();
         String userId = "user-123";
 
-        when(productClient.getProductById(productId)).thenReturn(null);
-
-        CartItemDto item = CartItemDto.builder()
-                .productId(productId)
-                .quantity(1)
+        ProductSummaryResponse digitalProduct = ProductSummaryResponse.builder()
+                .id(productId)
+                .name("Clean Architecture Video Course")
+                .price(BigDecimal.valueOf(1299.00))
+                .productType("DIGITAL")
+                .status("PUBLISHED")
                 .build();
 
-        assertThrows(ResourceNotFoundException.class, () -> cartService.addItem(userId, item));
-    }
+        when(productClient.getProductById(productId)).thenReturn(digitalProduct);
 
-    @Test
-    @DisplayName("Invalid quantity (<= 0 or > 999) -> Throws BadRequestException")
-    void testInvalidQuantityValidation() {
-        UUID productId = UUID.randomUUID();
-        String userId = "user-123";
+        Cart cart = Cart.builder().userId(userId).items(new ArrayList<>()).build();
+        when(cartRepository.findByUserId(userId)).thenReturn(Optional.of(cart));
+        when(cartRepository.saveAndFlush(any(Cart.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        CartItemDto zeroQty = CartItemDto.builder().productId(productId).quantity(0).build();
-        assertThrows(BadRequestException.class, () -> cartService.addItem(userId, zeroQty));
-
-        CartItemDto negativeQty = CartItemDto.builder().productId(productId).quantity(-1).build();
-        assertThrows(BadRequestException.class, () -> cartService.addItem(userId, negativeQty));
-
-        CartItemDto excessiveQty = CartItemDto.builder().productId(productId).quantity(1000).build();
-        assertThrows(BadRequestException.class, () -> cartService.addItem(userId, excessiveQty));
-    }
-
-    @Test
-    @DisplayName("Update item quantity in cart with price recalculation")
-    void testUpdateItemQuantity() {
-        UUID productId = UUID.randomUUID();
-        String userId = "user-123";
-
-        CartResponseDto existingCart = new CartResponseDto();
-        existingCart.getItems().add(CartItemDto.builder()
+        CartItemDto inputDto = CartItemDto.builder()
                 .productId(productId)
-                .productName("Spring in Action")
-                .unitPrice(BigDecimal.valueOf(500.00))
-                .quantity(1)
+                .quantity(5) // Requesting 5 units of a digital product
+                .build();
+
+        CartResponseDto result = cartService.addItem(userId, inputDto);
+
+        assertNotNull(result);
+        assertEquals(1, result.getItems().size());
+        assertEquals(1, result.getTotalItems());
+        assertEquals(1, result.getItems().get(0).getQuantity());
+        assertTrue(result.getItems().get(0).getIsDigital());
+        assertEquals(BigDecimal.valueOf(1299.00).setScale(2), result.getTotalAmount());
+    }
+
+    @Test
+    @DisplayName("Increment quantity for existing physical item")
+    void testAddItemToCart_ExistingPhysicalItemIncrement() {
+        UUID productId = UUID.randomUUID();
+        String userId = "user-123";
+
+        ProductSummaryResponse product = ProductSummaryResponse.builder()
+                .id(productId)
+                .name("Microservices Patterns")
+                .price(BigDecimal.valueOf(450.00))
+                .productType("PHYSICAL")
+                .status("PUBLISHED")
+                .build();
+
+        when(productClient.getProductById(productId)).thenReturn(product);
+
+        Cart cart = Cart.builder().userId(userId).items(new ArrayList<>()).build();
+        CartItem existingItem = CartItem.builder()
+                .cart(cart)
+                .productId(productId)
+                .productName("Microservices Patterns")
+                .unitPrice(BigDecimal.valueOf(450.00))
+                .quantity(2)
+                .isDigital(false)
+                .build();
+        cart.addItem(existingItem);
+
+        when(cartRepository.findByUserId(userId)).thenReturn(Optional.of(cart));
+        when(cartRepository.saveAndFlush(any(Cart.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        CartItemDto inputDto = CartItemDto.builder()
+                .productId(productId)
+                .quantity(3)
+                .build();
+
+        CartResponseDto result = cartService.addItem(userId, inputDto);
+
+        assertNotNull(result);
+        assertEquals(1, result.getItems().size());
+        assertEquals(5, result.getTotalItems());
+        assertEquals(5, result.getItems().get(0).getQuantity());
+        assertEquals(BigDecimal.valueOf(2250.00).setScale(2), result.getTotalAmount());
+    }
+
+    @Test
+    @DisplayName("Reject adding items exceeding maximum quantity limit")
+    void testAddItemToCart_ExceedMaxQuantityPerItem() {
+        UUID productId = UUID.randomUUID();
+        String userId = "user-123";
+
+        CartItemDto inputDto = CartItemDto.builder()
+                .productId(productId)
+                .quantity(CartService.MAX_QUANTITY_PER_ITEM + 1)
+                .build();
+
+        assertThrows(BadRequestException.class, () -> cartService.addItem(userId, inputDto));
+        verify(productClient, never()).getProductById(any());
+    }
+
+    @Test
+    @DisplayName("Retrieve cart with dynamically calculated totals")
+    void testGetCart_Existing() {
+        String userId = "user-123";
+        Cart cart = Cart.builder().userId(userId).items(new ArrayList<>()).build();
+        cart.addItem(CartItem.builder()
+                .cart(cart)
+                .productId(UUID.randomUUID())
+                .productName("Design Patterns")
+                .unitPrice(BigDecimal.valueOf(100.00))
+                .quantity(2)
                 .isDigital(false)
                 .build());
-
-        when(valueOperations.get("cart:" + userId)).thenReturn(existingCart);
-
-        CartResponseDto updatedCart = cartService.updateItemQuantity(userId, productId, 3);
-
-        assertNotNull(updatedCart);
-        assertEquals(1, updatedCart.getItems().size());
-        assertEquals(3, updatedCart.getItems().get(0).getQuantity());
-        assertEquals(BigDecimal.valueOf(1500.00).setScale(2), updatedCart.getTotalAmount());
-        assertEquals(3, updatedCart.getTotalItems());
-    }
-
-    @Test
-    @DisplayName("Updating digital product quantity > 1 throws BadRequestException")
-    void testUpdateDigitalItemQuantity_ThrowsBadRequestException() {
-        UUID productId = UUID.randomUUID();
-        String userId = "user-123";
-
-        CartResponseDto existingCart = new CartResponseDto();
-        existingCart.getItems().add(CartItemDto.builder()
-                .productId(productId)
-                .productName("Digital Audio Track")
-                .unitPrice(BigDecimal.valueOf(25.00))
+        cart.addItem(CartItem.builder()
+                .cart(cart)
+                .productId(UUID.randomUUID())
+                .productName("Algorithms Guide")
+                .unitPrice(BigDecimal.valueOf(50.00))
                 .quantity(1)
                 .isDigital(true)
                 .build());
 
-        when(valueOperations.get("cart:" + userId)).thenReturn(existingCart);
+        when(cartRepository.findByUserId(userId)).thenReturn(Optional.of(cart));
+
+        CartResponseDto result = cartService.getCart(userId);
+
+        assertNotNull(result);
+        assertEquals(2, result.getItems().size());
+        assertEquals(3, result.getTotalItems());
+        assertEquals(BigDecimal.valueOf(250.00).setScale(2), result.getTotalAmount());
+    }
+
+    @Test
+    @DisplayName("Retrieve cart when user has no cart returns empty response")
+    void testGetCart_NotFound() {
+        String userId = "unknown-user";
+        when(cartRepository.findByUserId(userId)).thenReturn(Optional.empty());
+
+        CartResponseDto result = cartService.getCart(userId);
+
+        assertNotNull(result);
+        assertEquals(0, result.getItems().size());
+        assertEquals(0, result.getTotalItems());
+        assertEquals(BigDecimal.ZERO.setScale(2), result.getTotalAmount());
+    }
+
+    @Test
+    @DisplayName("Update item quantity successfully")
+    void testUpdateItemQuantity_Success() {
+        String userId = "user-123";
+        UUID productId = UUID.randomUUID();
+
+        Cart cart = Cart.builder().userId(userId).items(new ArrayList<>()).build();
+        CartItem item = CartItem.builder()
+                .cart(cart)
+                .productId(productId)
+                .productName("Effective Java")
+                .unitPrice(BigDecimal.valueOf(200.00))
+                .quantity(1)
+                .isDigital(false)
+                .build();
+        cart.addItem(item);
+
+        when(cartRepository.findByUserId(userId)).thenReturn(Optional.of(cart));
+        when(cartRepository.saveAndFlush(any(Cart.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        CartResponseDto result = cartService.updateItemQuantity(userId, productId, 4);
+
+        assertNotNull(result);
+        assertEquals(4, result.getTotalItems());
+        assertEquals(BigDecimal.valueOf(800.00).setScale(2), result.getTotalAmount());
+    }
+
+    @Test
+    @DisplayName("Update item quantity to zero removes item from cart")
+    void testUpdateItemQuantity_ZeroRemovesItem() {
+        String userId = "user-123";
+        UUID productId = UUID.randomUUID();
+
+        Cart cart = Cart.builder().userId(userId).items(new ArrayList<>()).build();
+        CartItem item = CartItem.builder()
+                .cart(cart)
+                .productId(productId)
+                .productName("Effective Java")
+                .unitPrice(BigDecimal.valueOf(200.00))
+                .quantity(1)
+                .isDigital(false)
+                .build();
+        cart.addItem(item);
+
+        when(cartRepository.findByUserId(userId)).thenReturn(Optional.of(cart));
+        when(cartRepository.saveAndFlush(any(Cart.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        CartResponseDto result = cartService.updateItemQuantity(userId, productId, 0);
+
+        assertNotNull(result);
+        assertEquals(0, result.getItems().size());
+        assertEquals(0, result.getTotalItems());
+        assertEquals(BigDecimal.ZERO.setScale(2), result.getTotalAmount());
+    }
+
+    @Test
+    @DisplayName("Update digital item quantity greater than 1 throws BadRequestException")
+    void testUpdateItemQuantity_DigitalProductExceedsOne() {
+        String userId = "user-123";
+        UUID productId = UUID.randomUUID();
+
+        Cart cart = Cart.builder().userId(userId).items(new ArrayList<>()).build();
+        CartItem item = CartItem.builder()
+                .cart(cart)
+                .productId(productId)
+                .productName("Cloud DevOps PDF")
+                .unitPrice(BigDecimal.valueOf(150.00))
+                .quantity(1)
+                .isDigital(true)
+                .build();
+        cart.addItem(item);
+
+        when(cartRepository.findByUserId(userId)).thenReturn(Optional.of(cart));
 
         assertThrows(BadRequestException.class, () -> cartService.updateItemQuantity(userId, productId, 2));
     }
 
     @Test
     @DisplayName("Remove item from cart")
-    void testRemoveItemFromCart() {
-        UUID productId = UUID.randomUUID();
+    void testRemoveItem() {
         String userId = "user-123";
+        UUID productId = UUID.randomUUID();
 
-        CartResponseDto existingCart = new CartResponseDto();
-        existingCart.getItems().add(CartItemDto.builder().productId(productId).quantity(1).unitPrice(BigDecimal.TEN).build());
+        Cart cart = Cart.builder().userId(userId).items(new ArrayList<>()).build();
+        CartItem item = CartItem.builder()
+                .cart(cart)
+                .productId(productId)
+                .productName("Java Concurrency")
+                .unitPrice(BigDecimal.valueOf(300.00))
+                .quantity(1)
+                .isDigital(false)
+                .build();
+        cart.addItem(item);
 
-        when(valueOperations.get("cart:" + userId)).thenReturn(existingCart);
+        when(cartRepository.findByUserId(userId)).thenReturn(Optional.of(cart));
+        when(cartRepository.saveAndFlush(any(Cart.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        CartResponseDto cart = cartService.removeItem(userId, productId);
+        CartResponseDto result = cartService.removeItem(userId, productId);
 
-        assertNotNull(cart);
-        assertEquals(0, cart.getItems().size());
-        assertEquals(BigDecimal.ZERO.setScale(2), cart.getTotalAmount());
-        assertEquals(0, cart.getTotalItems());
+        assertNotNull(result);
+        assertEquals(0, result.getItems().size());
+        assertEquals(0, result.getTotalItems());
     }
 
     @Test
-    @DisplayName("Clear cart resets cart state in Redis")
+    @DisplayName("Clear entire cart")
     void testClearCart() {
         String userId = "user-123";
+        Cart cart = Cart.builder().userId(userId).items(new ArrayList<>()).build();
+        cart.addItem(CartItem.builder()
+                .cart(cart)
+                .productId(UUID.randomUUID())
+                .productName("Item A")
+                .unitPrice(BigDecimal.valueOf(50.00))
+                .quantity(1)
+                .isDigital(false)
+                .build());
 
-        CartResponseDto cleared = cartService.clearCart(userId);
+        when(cartRepository.findByUserId(userId)).thenReturn(Optional.of(cart));
+        when(cartRepository.saveAndFlush(any(Cart.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        assertNotNull(cleared);
-        assertTrue(cleared.getItems().isEmpty());
-        assertEquals(BigDecimal.ZERO.setScale(2), cleared.getTotalAmount());
-        verify(valueOperations, times(1)).set(eq("cart:" + userId), any(CartResponseDto.class), eq(Duration.ofDays(7)));
+        CartResponseDto result = cartService.clearCart(userId);
+
+        assertNotNull(result);
+        assertEquals(0, result.getItems().size());
+        assertEquals(0, result.getTotalItems());
     }
 }

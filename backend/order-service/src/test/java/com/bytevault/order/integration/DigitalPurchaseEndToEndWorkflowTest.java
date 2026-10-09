@@ -17,7 +17,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
+
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -36,9 +36,6 @@ public class DigitalPurchaseEndToEndWorkflowTest {
 
     @Mock
     private ProductClient productClient;
-
-    @Mock
-    private RabbitTemplate rabbitTemplate;
 
     @InjectMocks
     private OrderService orderService;
@@ -89,6 +86,5 @@ public class DigitalPurchaseEndToEndWorkflowTest {
         assertTrue(orderResponse.getItems().get(0).getIsDigital());
 
         verify(orderRepository, times(1)).save(any(Order.class));
-        verify(rabbitTemplate, times(1)).convertAndSend(eq("order.exchange"), eq("order.created"), any(Map.class));
     }
 }

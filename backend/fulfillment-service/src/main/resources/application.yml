@@ -19,16 +19,7 @@ spring:
         jdbc:
           lob:
             non_contextual_creation: true
-  rabbitmq:
-    host: ${RABBITMQ_HOST:localhost}
-    port: ${RABBITMQ_PORT:5672}
-    username: ${RABBITMQ_USER:guest}
-    password: ${RABBITMQ_PASSWORD:guest}
-    listener:
-      simple:
-        auto-startup: ${RABBITMQ_ENABLED:false}
-        acknowledge-mode: manual
-        prefetch: 10
+
 
 eureka:
   client:

@@ -32,6 +32,7 @@ public class ProductService {
     private final ProductRepository productRepository;
     private final CategoryRepository categoryRepository;
     private final StorageService storageService;
+    private final com.bytevault.product.security.VendorAuthorizationService vendorAuthorizationService;
 
     // --- VENDOR OPERATIONS (Approved Vendors Only) ---
 
@@ -329,12 +330,13 @@ public class ProductService {
         log.info("[ProductService] Product soft-deleted/deactivated: id={}", id);
     }
 
-    // --- PUBLIC STOREFRONT CATALOG (PUBLISHED Only) ---
+    // --- PUBLIC STOREFRONT CATALOG (PUBLISHED Only & APPROVED Vendors Only) ---
 
     @Transactional(readOnly = true)
     public List<ProductResponse> getAllProducts() {
         return productRepository.findByStatus(ProductStatus.PUBLISHED)
                 .stream()
+                .filter(p -> vendorAuthorizationService.isVendorApproved(p.getVendorId()))
                 .map(this::mapToResponse)
                 .collect(Collectors.toList());
     }
@@ -343,6 +345,7 @@ public class ProductService {
     public List<ProductResponse> searchProducts(String query, ProductType type, Long categoryId) {
         List<Product> published = productRepository.findByStatus(ProductStatus.PUBLISHED);
         return published.stream()
+                .filter(p -> vendorAuthorizationService.isVendorApproved(p.getVendorId()))
                 .filter(p -> {
                     if (query != null && !query.trim().isEmpty()) {
                         String q = query.toLowerCase();
@@ -368,7 +371,7 @@ public class ProductService {
         Product product = productRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found with ID: " + id));
 
-        if (product.getStatus() != ProductStatus.PUBLISHED) {
+        if (product.getStatus() != ProductStatus.PUBLISHED || !vendorAuthorizationService.isVendorApproved(product.getVendorId())) {
             throw new ResourceNotFoundException("Product not found or currently unavailable.");
         }
 

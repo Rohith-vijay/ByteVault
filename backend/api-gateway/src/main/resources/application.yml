@@ -1,5 +1,11 @@
 server:
-  port: 8080
+  port: ${SERVER_PORT:8080}
+  ssl:
+    enabled: ${SSL_ENABLED:false}
+    key-store: classpath:keystore.p12
+    key-store-password: bytevault
+    key-store-type: PKCS12
+    key-alias: bytevault
 
 spring:
   main:
@@ -12,10 +18,11 @@ spring:
       globalcors:
         corsConfigurations:
           '[/**]':
-            allowedOrigins:
-              - "http://localhost:5173"
-              - "http://127.0.0.1:5173"
-              - "http://localhost:3000"
+            allowedOriginPatterns:
+              - "http://localhost:*"
+              - "http://127.0.0.1:*"
+              - "https://localhost:*"
+              - "https://127.0.0.1:*"
             allowedMethods:
               - GET
               - POST
@@ -34,12 +41,12 @@ spring:
           enabled: true
           lower-case-service-id: true
       routes:
-        - id: auth-service
-          uri: lb://auth-service
+        - id: identity-auth
+          uri: lb://identity-service
           predicates:
             - Path=/api/v1/auth/**
-        - id: user-service
-          uri: lb://user-service
+        - id: identity-user
+          uri: lb://identity-service
           predicates:
             - Path=/api/v1/users/**,/api/v1/admin/vendors/**
 
@@ -67,36 +74,16 @@ spring:
           uri: lb://fulfillment-service
           predicates:
             - Path=/api/v1/fulfillment/**,/api/v1/fulfillments/**,/api/v1/downloads/**,/api/v1/entitlements/**
-        - id: inventory-service
-          uri: lb://inventory-service
-          predicates:
-            - Path=/api/v1/inventory/**
-        - id: shipping-service
-          uri: lb://shipping-service
-          predicates:
-            - Path=/api/v1/shipping/**
-        - id: warehouse-service
-          uri: lb://warehouse-service
-          predicates:
-            - Path=/api/v1/warehouses/**,/api/v1/warehouse/**
-        - id: support-service
-          uri: lb://support-service
-          predicates:
-            - Path=/api/v1/support/**
         - id: notification-service
           uri: lb://notification-service
           predicates:
             - Path=/api/v1/notifications/**
-        - id: auth-docs
-          uri: lb://auth-service
+
+        # OpenAPI Documentation Routes
+        - id: identity-docs
+          uri: lb://identity-service
           predicates:
-            - Path=/v3/api-docs/auth-service
-          filters:
-            - SetPath=/v3/api-docs
-        - id: user-docs
-          uri: lb://user-service
-          predicates:
-            - Path=/v3/api-docs/user-service
+            - Path=/v3/api-docs/identity-service
           filters:
             - SetPath=/v3/api-docs
         - id: product-docs
@@ -123,34 +110,10 @@ spring:
             - Path=/v3/api-docs/payment-service
           filters:
             - SetPath=/v3/api-docs
-        - id: inventory-docs
-          uri: lb://inventory-service
-          predicates:
-            - Path=/v3/api-docs/inventory-service
-          filters:
-            - SetPath=/v3/api-docs
         - id: fulfillment-docs
           uri: lb://fulfillment-service
           predicates:
             - Path=/v3/api-docs/fulfillment-service
-          filters:
-            - SetPath=/v3/api-docs
-        - id: shipping-docs
-          uri: lb://shipping-service
-          predicates:
-            - Path=/v3/api-docs/shipping-service
-          filters:
-            - SetPath=/v3/api-docs
-        - id: warehouse-docs
-          uri: lb://warehouse-service
-          predicates:
-            - Path=/v3/api-docs/warehouse-service
-          filters:
-            - SetPath=/v3/api-docs
-        - id: support-docs
-          uri: lb://support-service
-          predicates:
-            - Path=/v3/api-docs/support-service
           filters:
             - SetPath=/v3/api-docs
         - id: notification-docs
@@ -180,28 +143,17 @@ springdoc:
     path: /swagger-ui.html
     enabled: true
     urls:
-      - name: 1. Auth Service (Tokens & Login)
-        url: /v3/api-docs/auth-service
-      - name: 2. User Service
-        url: /v3/api-docs/user-service
-      - name: 3. Product Service
+      - name: 1. Identity Service (Auth & Users)
+        url: /v3/api-docs/identity-service
+      - name: 2. Product Service
         url: /v3/api-docs/product-service
-      - name: 4. Order Service
+      - name: 3. Order Service
         url: /v3/api-docs/order-service
-      - name: 5. Cart Service
+      - name: 4. Cart Service
         url: /v3/api-docs/cart-service
-      - name: 6. Payment Service
+      - name: 5. Payment Service
         url: /v3/api-docs/payment-service
-      - name: 7. Inventory Service
-        url: /v3/api-docs/inventory-service
-      - name: 8. Fulfillment Service
+      - name: 6. Fulfillment Service
         url: /v3/api-docs/fulfillment-service
-      - name: 9. Shipping Service
-        url: /v3/api-docs/shipping-service
-      - name: 10. Warehouse Service
-        url: /v3/api-docs/warehouse-service
-      - name: 11. Support Service
-        url: /v3/api-docs/support-service
-      - name: 12. Notification Service
+      - name: 7. Notification Service
         url: /v3/api-docs/notification-service
-

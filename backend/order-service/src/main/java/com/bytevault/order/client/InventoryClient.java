@@ -1,6 +1,7 @@
 package com.bytevault.order.client;
 
 import com.bytevault.common.api.ApiResponse;
+import com.bytevault.common.config.CommonFeignConfig;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -8,7 +9,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import java.util.Map;
 import java.util.UUID;
 
-@FeignClient(name = "inventory-service")
+@FeignClient(name = "inventory-service", configuration = CommonFeignConfig.class)
 public interface InventoryClient {
 
     @PostMapping("/api/v1/inventory/reserve")

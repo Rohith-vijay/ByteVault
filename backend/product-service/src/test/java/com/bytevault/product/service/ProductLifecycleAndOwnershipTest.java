@@ -41,6 +41,9 @@ public class ProductLifecycleAndOwnershipTest {
     @Mock
     private StorageService storageService;
 
+    @Mock
+    private com.bytevault.product.security.VendorAuthorizationService vendorAuthorizationService;
+
     @InjectMocks
     private ProductService productService;
 
@@ -281,6 +284,7 @@ public class ProductLifecycleAndOwnershipTest {
     void testPublicCatalogExcludesDraftDeactivatedAndArchived() {
         Product published = Product.builder().id(UUID.randomUUID()).name("Pub").status(ProductStatus.PUBLISHED).build();
         when(productRepository.findByStatus(ProductStatus.PUBLISHED)).thenReturn(List.of(published));
+        when(vendorAuthorizationService.isVendorApproved(any())).thenReturn(true);
 
         List<ProductResponse> publicCatalog = productService.getAllProducts();
 

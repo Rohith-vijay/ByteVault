@@ -18,7 +18,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
+
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -42,9 +42,6 @@ public class OrderServiceTest {
 
     @Mock
     private com.bytevault.order.client.InventoryClient inventoryClient;
-
-    @Mock
-    private RabbitTemplate rabbitTemplate;
 
     @InjectMocks
     private OrderService orderService;
@@ -429,7 +426,6 @@ public class OrderServiceTest {
 
         assertNotNull(cancelled);
         assertEquals(OrderStatus.CANCELLED.name(), cancelled.getStatus());
-        verify(rabbitTemplate, times(1)).convertAndSend(eq("order.exchange"), eq("order.cancelled"), any(java.util.Map.class));
     }
 
     @Test

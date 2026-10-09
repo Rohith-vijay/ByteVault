@@ -43,6 +43,9 @@ public class ProductServiceTest {
     @Mock
     private StorageService storageService;
 
+    @Mock
+    private com.bytevault.product.security.VendorAuthorizationService vendorAuthorizationService;
+
     @InjectMocks
     private ProductService productService;
 
@@ -161,11 +164,48 @@ public class ProductServiceTest {
         Product p2 = Product.builder().id(UUID.randomUUID()).name("Microservices Book").productType(ProductType.PHYSICAL).status(ProductStatus.PUBLISHED).build();
 
         when(productRepository.findByStatus(ProductStatus.PUBLISHED)).thenReturn(List.of(p1, p2));
+        when(vendorAuthorizationService.isVendorApproved(any())).thenReturn(true);
 
         List<ProductResponse> results = productService.searchProducts("Spring", ProductType.DIGITAL, null);
 
         assertEquals(1, results.size());
         assertEquals("Spring Boot Guide", results.get(0).getName());
+    }
+
+    @Test
+    @DisplayName("Read gate: getAllProducts filters out products whose vendor is SUSPENDED")
+    void testGetAllProducts_FiltersOutSuspendedVendor() {
+        UUID approvedVendorId = UUID.randomUUID();
+        UUID suspendedVendorId = UUID.randomUUID();
+
+        Product p1 = Product.builder().id(UUID.randomUUID()).name("Active Vendor Product")
+                .vendorId(approvedVendorId).productType(ProductType.DIGITAL).status(ProductStatus.PUBLISHED).build();
+        Product p2 = Product.builder().id(UUID.randomUUID()).name("Suspended Vendor Product")
+                .vendorId(suspendedVendorId).productType(ProductType.DIGITAL).status(ProductStatus.PUBLISHED).build();
+
+        when(productRepository.findByStatus(ProductStatus.PUBLISHED)).thenReturn(List.of(p1, p2));
+        when(vendorAuthorizationService.isVendorApproved(approvedVendorId)).thenReturn(true);
+        when(vendorAuthorizationService.isVendorApproved(suspendedVendorId)).thenReturn(false);
+
+        List<ProductResponse> results = productService.getAllProducts();
+
+        assertEquals(1, results.size());
+        assertEquals("Active Vendor Product", results.get(0).getName());
+    }
+
+    @Test
+    @DisplayName("Read gate: getProductById throws ResourceNotFoundException if vendor is SUSPENDED")
+    void testGetProductById_SuspendedVendor_ThrowsResourceNotFoundException() {
+        UUID suspendedVendorId = UUID.randomUUID();
+        UUID productId = UUID.randomUUID();
+
+        Product p = Product.builder().id(productId).name("Suspended Vendor Product")
+                .vendorId(suspendedVendorId).productType(ProductType.DIGITAL).status(ProductStatus.PUBLISHED).build();
+
+        when(productRepository.findById(productId)).thenReturn(Optional.of(p));
+        when(vendorAuthorizationService.isVendorApproved(suspendedVendorId)).thenReturn(false);
+
+        assertThrows(ResourceNotFoundException.class, () -> productService.getProductById(productId));
     }
 
     @Test

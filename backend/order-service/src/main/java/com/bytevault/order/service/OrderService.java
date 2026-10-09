@@ -7,11 +7,20 @@ import com.bytevault.order.dto.*;
 import com.bytevault.order.entity.Order;
 import com.bytevault.order.entity.OrderItem;
 import com.bytevault.order.entity.OrderStatus;
+import com.bytevault.common.client.NotificationClient;
+import com.bytevault.common.dto.notification.NotificationDto.OrderConfirmationEmailRequest;
+import com.bytevault.order.client.FulfillmentClient;
+import com.bytevault.order.client.ProductClient;
+import com.bytevault.order.dto.*;
+import com.bytevault.order.entity.Order;
+import com.bytevault.order.entity.OrderItem;
+import com.bytevault.order.entity.OrderStatus;
 import com.bytevault.order.entity.OrderType;
 import com.bytevault.order.repository.OrderRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,16 +40,22 @@ public class OrderService {
     private final com.fasterxml.jackson.databind.ObjectMapper objectMapper;
     private final ProductClient productClient;
     private final com.bytevault.order.client.InventoryClient inventoryClient;
-    private final RabbitTemplate rabbitTemplate;
 
-    @org.springframework.beans.factory.annotation.Autowired
-    private com.bytevault.order.client.FulfillmentClient fulfillmentClient;
+    @Autowired(required = false)
+    private FulfillmentClient fulfillmentClient;
 
-    public void setFulfillmentClient(com.bytevault.order.client.FulfillmentClient fulfillmentClient) {
+    @Autowired(required = false)
+    private NotificationClient notificationClient;
+
+    public void setFulfillmentClient(FulfillmentClient fulfillmentClient) {
         this.fulfillmentClient = fulfillmentClient;
     }
 
-    @org.springframework.beans.factory.annotation.Value("${app.gateway.secret:platform_default_gateway_shared_secret}")
+    public void setNotificationClient(NotificationClient notificationClient) {
+        this.notificationClient = notificationClient;
+    }
+
+    @Value("${app.gateway.secret:platform_default_gateway_shared_secret}")
     private String gatewaySecret;
 
     @Transactional
@@ -154,28 +169,6 @@ public class OrderService {
             Order savedOrder = orderRepository.save(order);
             log.info("[OrderService] Created order: id={}, orderNumber={}, totalAmount={}, type={}",
                     savedOrder.getId(), savedOrder.getOrderNumber(), savedOrder.getTotalAmount(), savedOrder.getOrderType());
-
-            // Publish OrderCreatedEvent to RabbitMQ
-            try {
-                Map<String, Object> event = new HashMap<>();
-                event.put("orderId", savedOrder.getId().toString());
-                event.put("orderNumber", savedOrder.getOrderNumber());
-                event.put("userId", savedOrder.getUserId().toString());
-                event.put("totalAmount", savedOrder.getTotalAmount().toString());
-                event.put("orderType", savedOrder.getOrderType().name());
-                event.put("customerEmail", savedOrder.getCustomerEmail());
-                event.put("customerName", savedOrder.getCustomerName());
-
-                List<String> productIds = savedOrder.getItems().stream()
-                        .map(i -> i.getProductId().toString())
-                        .collect(Collectors.toList());
-                event.put("productIds", productIds);
-
-                rabbitTemplate.convertAndSend("order.exchange", "order.created", event);
-                log.info("[OrderService] Published OrderCreatedEvent: orderId={}", savedOrder.getId());
-            } catch (Exception e) {
-                log.warn("[OrderService] Could not publish OrderCreatedEvent: {}", e.getMessage());
-            }
 
             return mapToResponse(savedOrder);
         } catch (Exception e) {
@@ -316,20 +309,20 @@ public class OrderService {
             String jsonPayload = objectMapper != null ? objectMapper.writeValueAsString(eventPayload) : new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(eventPayload);
 
             // Avoid duplicate outbox rows if an event already exists for this order
-            if (outboxEventRepository.findByAggregateIdAndEventType(orderId, "order.paid").isEmpty()) {
-                com.bytevault.order.entity.OutboxEvent outboxEvent = com.bytevault.order.entity.OutboxEvent.builder()
-                        .aggregateType("ORDER")
-                        .aggregateId(orderId)
-                        .eventType("order.paid")
-                        .payload(jsonPayload)
-                        .status(com.bytevault.order.entity.OutboxStatus.PENDING)
-                        .retryCount(0)
-                        .createdAt(java.time.LocalDateTime.now())
-                        .build();
-
-                outboxEventRepository.save(outboxEvent);
-                log.info("[OrderService] Transactional outbox event created atomically for orderId={}", orderId);
-            }
+            com.bytevault.order.entity.OutboxEvent outboxEvent = outboxEventRepository.findByAggregateIdAndEventType(orderId, "order.paid")
+                    .orElseGet(() -> {
+                        com.bytevault.order.entity.OutboxEvent newEvent = com.bytevault.order.entity.OutboxEvent.builder()
+                                .aggregateType("ORDER")
+                                .aggregateId(orderId)
+                                .eventType("order.paid")
+                                .payload(jsonPayload)
+                                .status(com.bytevault.order.entity.OutboxStatus.PENDING)
+                                .retryCount(0)
+                                .createdAt(java.time.LocalDateTime.now())
+                                .build();
+                        return outboxEventRepository.save(newEvent);
+                    });
+            log.info("[OrderService] Transactional outbox event ready for orderId={}", orderId);
 
             // Direct synchronous fulfillment dispatch for immediate customer entitlement (NO RabbitMQ dependency)
             List<UUID> digitalProductIds = savedOrder.getItems().stream()
@@ -345,9 +338,40 @@ public class OrderService {
                 try {
                     fulfillmentClient.fulfillOrderInternal(gatewaySecret, "ROLE_INTERNAL_SERVICE", savedOrder.getId(), savedOrder.getUserId(), digitalProductIds);
                     log.info("[OrderService] Immediate synchronous digital fulfillment succeeded for order {}", savedOrder.getId());
+                    if (outboxEvent != null) {
+                        outboxEvent.setStatus(com.bytevault.order.entity.OutboxStatus.PUBLISHED);
+                        outboxEvent.setPublishedAt(java.time.LocalDateTime.now());
+                        outboxEventRepository.save(outboxEvent);
+                    }
                 } catch (Exception ex) {
-                    log.error("[OrderService] CRITICAL: Synchronous digital fulfillment failed for order {}: {}", savedOrder.getId(), ex.getMessage(), ex);
-                    throw new RuntimeException("Digital product fulfillment failed for order " + savedOrder.getId() + ": " + ex.getMessage(), ex);
+                    log.warn("[OrderService] Immediate synchronous digital fulfillment failed for order {}: {}. Outbox event remains PENDING for automatic retry by OutboxPublisherService.", savedOrder.getId(), ex.getMessage());
+                    if (outboxEvent != null) {
+                        outboxEvent.setStatus(com.bytevault.order.entity.OutboxStatus.PENDING);
+                        outboxEvent.setLastError("Synchronous dispatch failed: " + ex.getMessage());
+                        outboxEventRepository.save(outboxEvent);
+                    }
+                }
+            } else if (outboxEvent != null) {
+                // Physical order or no digital items - outbox marked PUBLISHED
+                outboxEvent.setStatus(com.bytevault.order.entity.OutboxStatus.PUBLISHED);
+                outboxEvent.setPublishedAt(java.time.LocalDateTime.now());
+                outboxEventRepository.save(outboxEvent);
+            }
+
+            // Defensive notification dispatch
+            if (notificationClient != null && savedOrder.getCustomerEmail() != null) {
+                try {
+                    notificationClient.sendOrderConfirmationEmail(OrderConfirmationEmailRequest.builder()
+                            .toEmail(savedOrder.getCustomerEmail())
+                            .customerName(savedOrder.getCustomerName())
+                            .orderId(savedOrder.getId())
+                            .orderNumber(savedOrder.getOrderNumber())
+                            .totalAmount(savedOrder.getTotalAmount())
+                            .downloadLink(null)
+                            .build());
+                    log.info("[OrderService] Dispatched order confirmation notification for order {}", savedOrder.getId());
+                } catch (Exception notifEx) {
+                    log.warn("[OrderService] Notification dispatch failed (swallowed): {}", notifEx.getMessage());
                 }
             }
         } catch (Exception e) {
@@ -385,19 +409,6 @@ public class OrderService {
         order.setStatus(OrderStatus.CANCELLED);
         Order updated = orderRepository.save(order);
         log.info("[OrderService] Order cancelled: orderId={}, cancelledBy={}, reason={}", orderId, userId, reason);
-
-        // Publish OrderCancelledEvent to RabbitMQ
-        try {
-            Map<String, Object> event = new HashMap<>();
-            event.put("orderId", updated.getId().toString());
-            event.put("orderNumber", updated.getOrderNumber());
-            event.put("userId", updated.getUserId().toString());
-            event.put("reason", reason != null ? reason : "Cancelled by user");
-            rabbitTemplate.convertAndSend("order.exchange", "order.cancelled", event);
-            log.info("[OrderService] Published OrderCancelledEvent: orderId={}", updated.getId());
-        } catch (Exception e) {
-            log.warn("[OrderService] Could not publish OrderCancelledEvent: {}", e.getMessage());
-        }
 
         return mapToResponse(updated);
     }

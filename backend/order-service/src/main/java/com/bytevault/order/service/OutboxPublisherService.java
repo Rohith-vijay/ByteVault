@@ -1,6 +1,8 @@
 package com.bytevault.order.service;
 
-import com.bytevault.order.config.RabbitConfig;
+import com.bytevault.common.client.NotificationClient;
+import com.bytevault.common.dto.notification.NotificationDto.OrderConfirmationEmailRequest;
+import com.bytevault.order.client.FulfillmentClient;
 import com.bytevault.order.entity.OutboxEvent;
 import com.bytevault.order.entity.OutboxStatus;
 import com.bytevault.order.repository.OutboxEventRepository;
@@ -8,21 +10,20 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.amqp.core.ReturnedMessage;
-import org.springframework.amqp.rabbit.connection.CorrelationData;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -30,11 +31,27 @@ import java.util.concurrent.TimeoutException;
 public class OutboxPublisherService {
 
     private final OutboxEventRepository outboxEventRepository;
-    private final RabbitTemplate rabbitTemplate;
     private final ObjectMapper objectMapper;
+
+    @Autowired(required = false)
+    private FulfillmentClient fulfillmentClient;
+
+    @Autowired(required = false)
+    private NotificationClient notificationClient;
+
+    @Value("${app.gateway.secret:platform_default_gateway_shared_secret}")
+    private String gatewaySecret;
 
     public static final int MAX_RETRIES = 5;
     private static final int BATCH_SIZE = 20;
+
+    public void setFulfillmentClient(FulfillmentClient fulfillmentClient) {
+        this.fulfillmentClient = fulfillmentClient;
+    }
+
+    public void setNotificationClient(NotificationClient notificationClient) {
+        this.notificationClient = notificationClient;
+    }
 
     @Scheduled(fixedDelayString = "${app.outbox.poll-interval-ms:2000}")
     public void publishPendingEvents() {
@@ -46,7 +63,7 @@ public class OutboxPublisherService {
             return;
         }
 
-        log.debug("[OutboxPublisher] Found {} pending outbox events ready to publish", readyEvents.size());
+        log.debug("[OutboxPublisher] Found {} pending outbox events ready to process", readyEvents.size());
 
         for (OutboxEvent event : readyEvents) {
             processSingleOutboxEvent(event.getId());
@@ -54,68 +71,63 @@ public class OutboxPublisherService {
     }
 
     /**
-     * Publishes an outbox event. To avoid holding DB connections and row locks
-     * open during RabbitMQ network round-trips, claiming and completion are
-     * performed in separate short local database transactions.
+     * Processes an outbox event synchronously as internal reliability infrastructure.
+     * Retries failed inter-service synchronous calls without external message brokers.
      */
     public void processSingleOutboxEvent(UUID eventId) {
-        // Step 1: Claim row atomically across multiple application instances
         OutboxEvent claimedEvent = claimEvent(eventId);
         if (claimedEvent == null) {
-            // Already claimed by another worker or not in PENDING status
             return;
         }
 
-        // Step 2: Publish over network outside the database transaction
         try {
             Map<String, Object> payloadMap = objectMapper.readValue(
                     claimedEvent.getPayload(), new TypeReference<Map<String, Object>>() {});
 
-            CorrelationData correlationData = new CorrelationData(claimedEvent.getId().toString());
-            log.info("[OutboxPublisher] Publishing outbox event id={}, type={}, aggregateId={}",
+            log.info("[OutboxPublisher] Processing outbox event id={}, type={}, aggregateId={}",
                     claimedEvent.getId(), claimedEvent.getEventType(), claimedEvent.getAggregateId());
 
-            rabbitTemplate.convertAndSend(RabbitConfig.EXCHANGE, claimedEvent.getEventType(), payloadMap, correlationData);
+            if ("order.paid".equalsIgnoreCase(claimedEvent.getEventType())) {
+                UUID orderId = UUID.fromString((String) payloadMap.get("orderId"));
+                UUID userId = UUID.fromString((String) payloadMap.get("userId"));
 
-            // Step 3: Handle broker confirmation and returned messages
-            boolean confirmed = false;
-            String failureReason = null;
+                List<?> rawProducts = (List<?>) payloadMap.get("productIds");
+                List<UUID> productIds = rawProducts != null
+                        ? rawProducts.stream().map(p -> UUID.fromString(p.toString())).collect(Collectors.toList())
+                        : List.of();
 
-            try {
-                CorrelationData.Confirm confirm = correlationData.getFuture().get(3, TimeUnit.SECONDS);
-                if (confirm != null && confirm.isAck()) {
-                    confirmed = true;
-                } else {
-                    failureReason = confirm != null ? "Broker NACK: " + confirm.getReason() : "Broker NACK: null confirm";
-                    log.warn("[OutboxPublisher] Broker NACK for event id={}: {}", claimedEvent.getId(), failureReason);
+                if (fulfillmentClient != null && !productIds.isEmpty()) {
+                    log.info("[OutboxPublisher] Dispatching synchronous fulfillment for order {}", orderId);
+                    fulfillmentClient.fulfillOrderInternal(gatewaySecret, "ROLE_INTERNAL_SERVICE", orderId, userId, productIds);
                 }
-            } catch (TimeoutException te) {
-                failureReason = "Broker confirm timed out after 3000ms";
-                log.warn("[OutboxPublisher] Broker confirm timed out for event id={}", claimedEvent.getId());
-            } catch (Exception ex) {
-                failureReason = "Broker confirm failed: " + ex.getMessage();
-                log.warn("[OutboxPublisher] Broker confirm execution error for event id={}: {}", claimedEvent.getId(), ex.getMessage());
+
+                // Defensive notification dispatch
+                if (notificationClient != null && payloadMap.containsKey("customerEmail")) {
+                    try {
+                        String email = (String) payloadMap.get("customerEmail");
+                        String name = (String) payloadMap.get("customerName");
+                        String orderNum = (String) payloadMap.get("orderNumber");
+                        BigDecimal amount = payloadMap.get("totalAmount") != null ? new BigDecimal(payloadMap.get("totalAmount").toString()) : null;
+
+                        notificationClient.sendOrderConfirmationEmail(OrderConfirmationEmailRequest.builder()
+                                .toEmail(email)
+                                .customerName(name)
+                                .orderId(orderId)
+                                .orderNumber(orderNum)
+                                .totalAmount(amount)
+                                .downloadLink(null)
+                                .build());
+                    } catch (Exception notifEx) {
+                        log.warn("[OutboxPublisher] Notification dispatch failed (swallowed): {}", notifEx.getMessage());
+                    }
+                }
             }
 
-            // Check if message was returned as unroutable
-            ReturnedMessage returned = correlationData.getReturned();
-            if (returned != null) {
-                confirmed = false;
-                failureReason = "Unroutable message: code=" + returned.getReplyCode() + " text=" + returned.getReplyText();
-                log.error("[OutboxPublisher] Message returned as unroutable by broker: eventId={}, reason={}",
-                        claimedEvent.getId(), failureReason);
-            }
-
-            // Step 4: Record outcome in database
-            if (confirmed) {
-                recordPublishSuccess(claimedEvent.getId());
-                log.info("[OutboxPublisher] Event successfully confirmed and marked PUBLISHED: id={}", claimedEvent.getId());
-            } else {
-                recordPublishFailure(claimedEvent.getId(), failureReason);
-            }
+            recordPublishSuccess(claimedEvent.getId());
+            log.info("[OutboxPublisher] Event successfully processed and marked PUBLISHED: id={}", claimedEvent.getId());
 
         } catch (Exception e) {
-            log.error("[OutboxPublisher] Unexpected error publishing outbox event id={}: {}", claimedEvent.getId(), e.getMessage());
+            log.error("[OutboxPublisher] Error processing outbox event id={}: {}", claimedEvent.getId(), e.getMessage());
             recordPublishFailure(claimedEvent.getId(), e.getMessage());
         }
     }
@@ -153,7 +165,7 @@ public class OutboxPublisherService {
                         event.getId(), nextRetries, errorMessage);
             } else {
                 event.setStatus(OutboxStatus.PENDING);
-                long backoffSeconds = Math.min(300, (long) Math.pow(2, nextRetries) * 2); // 4s, 8s, 16s, 32s...
+                long backoffSeconds = Math.min(300, (long) Math.pow(2, nextRetries) * 2);
                 event.setNextRetryAt(LocalDateTime.now().plusSeconds(backoffSeconds));
                 log.warn("[OutboxPublisher] Outbox event id={} retry #{} scheduled in {}s. Error: {}",
                         event.getId(), nextRetries, backoffSeconds, errorMessage);
@@ -162,10 +174,6 @@ public class OutboxPublisherService {
         });
     }
 
-    /**
-     * Crash recovery: Resets events stuck in PROCESSING for more than 2 minutes
-     * (e.g. from an ungraceful container termination during publication) back to PENDING.
-     */
     @Scheduled(fixedDelayString = "${app.outbox.stale-cleanup-ms:60000}")
     @Transactional
     public void recoverStaleProcessingEvents() {

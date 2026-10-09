@@ -57,8 +57,7 @@ public class OrderPaymentSecurityAndOutboxTest {
                 outboxEventRepository,
                 new ObjectMapper(),
                 null, // productClient
-                null, // inventoryClient
-                null  // rabbitTemplate
+                null  // inventoryClient
         );
 
         orderController = new OrderController(orderService);

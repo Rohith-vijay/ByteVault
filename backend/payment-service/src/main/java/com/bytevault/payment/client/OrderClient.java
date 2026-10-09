@@ -18,8 +18,8 @@ public interface OrderClient {
     @PostMapping("/api/v1/orders/internal/{id}/mark-paid")
     ApiResponse<Map<String, Object>> markOrderPaid(
             @PathVariable("id") UUID id,
-            @RequestHeader("X-Gateway-Secret") String gatewaySecret,
-            @RequestHeader("X-User-Roles") String userRoles,
+            @RequestHeader(value = "X-Gateway-Secret", required = false) String gatewaySecret,
+            @RequestHeader(value = "X-User-Roles", required = false) String userRoles,
             @RequestBody OrderPaymentConfirmationRequest request);
 
     @org.springframework.web.bind.annotation.PutMapping("/api/v1/orders/{id}/status")

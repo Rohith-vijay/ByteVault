@@ -52,7 +52,7 @@ public class GatewaySecurityAndRoutingIntegrationTest {
     }
 
     @Test
-    @DisplayName("CORS preflight OPTIONS request is passed through safely")
+    @DisplayName("CORS preflight OPTIONS request is intercepted and short-circuited with 200 OK")
     void testCorsPreflight() {
         MockServerHttpRequest request = MockServerHttpRequest.options("/api/v1/orders")
                 .header(HttpHeaders.ORIGIN, "http://localhost:5173")
@@ -61,11 +61,12 @@ public class GatewaySecurityAndRoutingIntegrationTest {
         MockServerWebExchange exchange = MockServerWebExchange.from(request);
 
         WebFilterChain chain = mock(WebFilterChain.class);
-        when(chain.filter(any())).thenReturn(Mono.empty());
 
         filter.filter(exchange, chain).block();
 
-        verify(chain, times(1)).filter(any());
+        assertEquals(HttpStatus.OK, exchange.getResponse().getStatusCode());
+        assertEquals("http://localhost:5173", exchange.getResponse().getHeaders().getFirst("Access-Control-Allow-Origin"));
+        verify(chain, never()).filter(any());
     }
 
     @Test
