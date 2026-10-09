@@ -3,18 +3,15 @@ package com.bytevault.order.service;
 import com.bytevault.common.exception.BadRequestException;
 import com.bytevault.common.exception.ResourceNotFoundException;
 import com.bytevault.order.client.ProductClient;
+import com.bytevault.order.client.FulfillmentRevokeClient;
 import com.bytevault.order.dto.*;
+import com.bytevault.common.dto.VendorBreakdownEntry;
 import com.bytevault.order.entity.Order;
 import com.bytevault.order.entity.OrderItem;
 import com.bytevault.order.entity.OrderStatus;
 import com.bytevault.common.client.NotificationClient;
 import com.bytevault.common.dto.notification.NotificationDto.OrderConfirmationEmailRequest;
 import com.bytevault.order.client.FulfillmentClient;
-import com.bytevault.order.client.ProductClient;
-import com.bytevault.order.dto.*;
-import com.bytevault.order.entity.Order;
-import com.bytevault.order.entity.OrderItem;
-import com.bytevault.order.entity.OrderStatus;
 import com.bytevault.order.entity.OrderType;
 import com.bytevault.order.repository.OrderRepository;
 import lombok.RequiredArgsConstructor;
@@ -45,10 +42,17 @@ public class OrderService {
     private FulfillmentClient fulfillmentClient;
 
     @Autowired(required = false)
+    private FulfillmentRevokeClient fulfillmentRevokeClient;
+
+    @Autowired(required = false)
     private NotificationClient notificationClient;
 
     public void setFulfillmentClient(FulfillmentClient fulfillmentClient) {
         this.fulfillmentClient = fulfillmentClient;
+    }
+
+    public void setFulfillmentRevokeClient(FulfillmentRevokeClient fulfillmentRevokeClient) {
+        this.fulfillmentRevokeClient = fulfillmentRevokeClient;
     }
 
     public void setNotificationClient(NotificationClient notificationClient) {
@@ -411,6 +415,99 @@ public class OrderService {
         log.info("[OrderService] Order cancelled: orderId={}, cancelledBy={}, reason={}", orderId, userId, reason);
 
         return mapToResponse(updated);
+    }
+
+    /**
+     * Internal: compute per-vendor gross subtotals for a given order.
+     * Gross = sum of order_item.subtotal per vendor_id.
+     * Shipping/tax are NOT attributed to vendors in this phase.
+     * Called by Payment Service after marking an order PAID, to populate VendorLedger.
+     */
+    @Transactional(readOnly = true)
+    public List<VendorBreakdownEntry> getVendorBreakdown(UUID orderId) {
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + orderId));
+
+        Map<UUID, BigDecimal> totals = new LinkedHashMap<>();
+        for (OrderItem item : order.getItems()) {
+            if (item.getVendorId() == null) continue;
+            BigDecimal sub = item.getSubtotal() != null
+                    ? item.getSubtotal()
+                    : item.getUnitPrice().multiply(BigDecimal.valueOf(item.getQuantity()));
+            totals.merge(item.getVendorId(), sub, BigDecimal::add);
+        }
+
+        return totals.entrySet().stream()
+                .map(e -> VendorBreakdownEntry.builder()
+                        .vendorId(e.getKey())
+                        .grossSubtotal(e.getValue())
+                        .build())
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * Internal: apply a refund-driven CANCELLED transition.
+     * Secured externally (gateway-secret + internal role check in controller).
+     * On success: sets order status to CANCELLED and calls Fulfillment to revoke entitlements.
+     * Idempotent: already-cancelled orders return without error.
+     */
+    @Transactional
+    public OrderResponse applyRefundCancel(UUID orderId) {
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + orderId));
+
+        if (order.getStatus() == OrderStatus.CANCELLED) {
+            log.info("[OrderService] applyRefundCancel: order {} already CANCELLED (idempotent)", orderId);
+            return mapToResponse(order);
+        }
+
+        OrderStatus current = order.getStatus();
+        boolean cancellable = current == OrderStatus.PAID
+                || current == OrderStatus.FULFILLED
+                || current == OrderStatus.PROCESSING
+                || current == OrderStatus.READY_FOR_FULFILLMENT
+                || current == OrderStatus.PENDING
+                || current == OrderStatus.PAYMENT_PENDING;
+        if (!cancellable) {
+            throw new BadRequestException("Cannot apply refund-cancel to order in status: " + current);
+        }
+
+        order.setStatus(OrderStatus.CANCELLED);
+        Order saved = orderRepository.save(order);
+        log.info("[OrderService] Order {} moved to CANCELLED via refund path", orderId);
+
+        // Revoke digital entitlements — best-effort, must not fail the cancel transition
+        if (fulfillmentRevokeClient != null) {
+            try {
+                fulfillmentRevokeClient.revokeEntitlementsByOrder(orderId);
+                log.info("[OrderService] Entitlement revocation triggered for orderId={}", orderId);
+            } catch (Exception e) {
+                log.error("[OrderService] Entitlement revocation failed for orderId={} (refund applied; revoke must be retried manually): {}",
+                        orderId, e.getMessage());
+            }
+        }
+
+        return mapToResponse(saved);
+    }
+
+    /**
+     * Internal: apply a payment-failure transition to move order to FAILED.
+     * Prevents orders from remaining stuck in PENDING indefinitely.
+     */
+    @Transactional
+    public OrderResponse markOrderFailed(UUID orderId, String reason) {
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + orderId));
+
+        if (order.getStatus() == OrderStatus.FAILED || order.getStatus() == OrderStatus.CANCELLED) {
+            log.info("[OrderService] markOrderFailed: order {} already in terminal state {}", orderId, order.getStatus());
+            return mapToResponse(order);
+        }
+
+        order.setStatus(OrderStatus.FAILED);
+        Order saved = orderRepository.save(order);
+        log.info("[OrderService] Order {} moved to FAILED via payment failure path. Reason: {}", orderId, reason);
+        return mapToResponse(saved);
     }
 
     private boolean isValidStatusTransition(OrderStatus from, OrderStatus to) {

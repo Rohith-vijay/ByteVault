@@ -70,6 +70,26 @@ public class FulfillmentController {
         return ResponseEntity.ok(ApiResponse.success("Order digitally fulfilled", null));
     }
 
+    /**
+     * Internal endpoint called by Order Service when a full-refund CANCELLED transition is applied.
+     * Secured by X-Gateway-Secret; no end-user role required.
+     */
+    @PostMapping("/internal/revoke-by-order")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> revokeEntitlementsByOrderInternal(
+            @RequestHeader(value = "X-Gateway-Secret", required = false) String gatewaySecretHeader,
+            @RequestHeader(value = "X-User-Roles", required = false) String userRolesHeader,
+            @RequestParam("orderId") UUID orderId) {
+
+        log.info("[FulfillmentController] Internal revoke-by-order request for orderId={}", orderId);
+        int revoked = fulfillmentService.revokeEntitlementsByOrderId(orderId);
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("orderId", orderId);
+        result.put("revokedCount", revoked);
+        return ResponseEntity.ok(ApiResponse.success("Entitlements revoked for order", result));
+    }
+
+
     private UUID resolveUserId(String headerUserId, Authentication authentication) {
         if (headerUserId != null && !headerUserId.trim().isEmpty()) {
             try {

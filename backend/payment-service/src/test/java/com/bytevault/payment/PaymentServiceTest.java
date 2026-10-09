@@ -16,7 +16,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.http.ResponseEntity;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -45,7 +44,7 @@ public class PaymentServiceTest {
     private com.bytevault.payment.service.PaymentOrderSyncService paymentOrderSyncService;
 
     @Mock
-    private RabbitTemplate rabbitTemplate;
+    private com.bytevault.payment.client.OrderClient orderClient;
 
     @Mock
     private com.bytevault.payment.service.VendorLedgerService vendorLedgerService;
@@ -63,7 +62,7 @@ public class PaymentServiceTest {
     void setUp() {
         ReflectionTestUtils.setField(razorpayPaymentService, "keyId", "rzp_test_123");
         ReflectionTestUtils.setField(razorpayPaymentService, "keySecret", secret);
-        paymentController = new PaymentController(razorpayPaymentService, vendorLedgerService, refundService, rabbitTemplate, transactionRepository, paymentOrderSyncService);
+        paymentController = new PaymentController(razorpayPaymentService, vendorLedgerService, refundService, transactionRepository, paymentOrderSyncService, orderClient);
     }
 
     private String calculateHmacSha256(String data, String key) throws Exception {
@@ -121,11 +120,14 @@ public class PaymentServiceTest {
                 .razorpaySignature("invalid_tampered_signature")
                 .build();
 
+        UUID dbOrderId = UUID.randomUUID();
+        request.setDbOrderId(dbOrderId.toString());
+
         when(transactionRepository.findByRazorpayOrderId("order_12345"))
                 .thenReturn(Optional.of(PaymentTransaction.builder().status("PENDING").build()));
 
         assertThrows(IllegalArgumentException.class, () -> paymentController.verifyPayment(request));
-        verify(rabbitTemplate, times(1)).convertAndSend(eq("order.exchange"), eq("payment.failed"), any(Map.class));
+        verify(orderClient, times(1)).markOrderFailed(eq(dbOrderId), any(), eq("ROLE_INTERNAL_SERVICE"), any());
     }
 
     @Test
@@ -150,8 +152,8 @@ public class PaymentServiceTest {
         assertNotNull(response.getBody());
         assertEquals("SUCCESS", response.getBody().get("status"));
         assertTrue(response.getBody().get("message").toString().contains("idempotent"));
-        // Ensure no duplicate events fired
-        verify(rabbitTemplate, never()).convertAndSend(anyString(), anyString(), any(Map.class));
+        // Ensure no failure call fired
+        verify(orderClient, never()).markOrderFailed(any(UUID.class), any(), any(), any());
     }
 
     @Test
@@ -183,7 +185,7 @@ public class PaymentServiceTest {
         when(mockPaymentService.createOrder(any())).thenReturn(mockOrderResponse);
 
         PaymentController controllerWithMock = new PaymentController(
-                mockPaymentService, vendorLedgerService, refundService, rabbitTemplate, transactionRepository, paymentOrderSyncService);
+                mockPaymentService, vendorLedgerService, refundService, transactionRepository, paymentOrderSyncService, orderClient);
 
         ResponseEntity<PaymentOrderResponse> response = controllerWithMock.createPaymentOrder(request);
 

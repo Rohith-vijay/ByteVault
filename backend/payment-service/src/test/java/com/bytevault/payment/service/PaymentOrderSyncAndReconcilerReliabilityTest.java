@@ -33,6 +33,9 @@ public class PaymentOrderSyncAndReconcilerReliabilityTest {
     @Mock
     private PaymentTransactionRepository transactionRepository;
 
+    @Mock
+    private com.bytevault.payment.service.VendorLedgerService vendorLedgerService;
+
     private PaymentOrderSyncService syncService;
     private PaymentOrderReconciler reconciler;
 
@@ -40,7 +43,7 @@ public class PaymentOrderSyncAndReconcilerReliabilityTest {
 
     @BeforeEach
     void setUp() {
-        syncService = new PaymentOrderSyncService(orderClient, transactionRepository);
+        syncService = new PaymentOrderSyncService(orderClient, transactionRepository, vendorLedgerService);
         ReflectionTestUtils.setField(syncService, "gatewaySecret", gatewaySecret);
         reconciler = new PaymentOrderReconciler(transactionRepository, syncService);
     }

@@ -9,7 +9,7 @@ import com.bytevault.payment.repository.PaymentTransactionRepository;
 import com.bytevault.payment.service.PaymentService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -27,9 +27,12 @@ public class PaymentController {
     private final PaymentService paymentService;
     private final com.bytevault.payment.service.VendorLedgerService vendorLedgerService;
     private final com.bytevault.payment.service.RefundService refundService;
-    private final RabbitTemplate rabbitTemplate;
     private final PaymentTransactionRepository transactionRepository;
     private final com.bytevault.payment.service.PaymentOrderSyncService paymentOrderSyncService;
+    private final com.bytevault.payment.client.OrderClient orderClient;
+
+    @Value("${app.gateway.secret:platform_default_gateway_shared_secret}")
+    private String gatewaySecret;
 
     @GetMapping("/vendor/earnings")
     public ResponseEntity<com.bytevault.payment.dto.VendorEarningsResponse> getVendorEarnings(
@@ -212,15 +215,16 @@ public class PaymentController {
                 log.warn("[PaymentController] Could not update transaction status to FAILED: {}", e.getMessage());
             }
 
-            // Fire PaymentFailedEvent
-            try {
-                Map<String, Object> failEvent = new HashMap<>();
-                failEvent.put("orderId", request.getDbOrderId());
-                failEvent.put("razorpayOrderId", request.getRazorpayOrderId());
-                failEvent.put("status", "FAILED");
-                failEvent.put("error", ex.getMessage());
-                rabbitTemplate.convertAndSend("order.exchange", "payment.failed", failEvent);
-            } catch (Exception ignored) {}
+            // Notify Order Service of payment failure
+            if (request.getDbOrderId() != null) {
+                try {
+                    UUID orderId = UUID.fromString(request.getDbOrderId());
+                    orderClient.markOrderFailed(orderId, gatewaySecret, "ROLE_INTERNAL_SERVICE", ex.getMessage());
+                    log.info("[PaymentController] Synced FAILED status to order-service for orderId={}", orderId);
+                } catch (Exception e) {
+                    log.warn("[PaymentController] Could not sync FAILED status to order-service: {}", e.getMessage());
+                }
+            }
 
             throw ex;
         }

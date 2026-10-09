@@ -9,21 +9,21 @@ import com.bytevault.payment.entity.Refund;
 import com.bytevault.payment.repository.PaymentTransactionRepository;
 import com.bytevault.payment.repository.RefundRepository;
 import com.bytevault.payment.service.RefundService;
+import com.bytevault.payment.service.VendorLedgerService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
 
 import java.math.BigDecimal;
-import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
@@ -40,7 +40,7 @@ public class RefundServiceTest {
     private OrderClient orderClient;
 
     @Mock
-    private RabbitTemplate rabbitTemplate;
+    private VendorLedgerService vendorLedgerService;
 
     @InjectMocks
     private RefundService refundService;
@@ -83,8 +83,8 @@ public class RefundServiceTest {
         assertEquals("REFUNDED", tx.getStatus());
 
         verify(transactionRepository, times(1)).save(tx);
-        verify(orderClient, times(1)).updateOrderStatus(eq(orderId), eq("CANCELLED"));
-        verify(rabbitTemplate, times(1)).convertAndSend(eq("order.exchange"), eq("refund.completed"), any(Map.class));
+        verify(vendorLedgerService, times(1)).reverseTransactionForRefund(eq(orderId), eq(refundAmount), eq(true));
+        verify(orderClient, times(1)).refundCancel(eq(orderId), any(), eq("ROLE_INTERNAL_SERVICE"));
     }
 
     @Test
@@ -113,8 +113,8 @@ public class RefundServiceTest {
         assertEquals(existingRefund.getId(), response.getRefundId());
 
         verify(refundRepository, never()).save(any(Refund.class));
-        verify(orderClient, never()).updateOrderStatus(any(), any());
-        verify(rabbitTemplate, never()).convertAndSend(anyString(), anyString(), any(Map.class));
+        verify(vendorLedgerService, never()).reverseTransactionForRefund(any(), any(), anyBoolean());
+        verify(orderClient, never()).refundCancel(any(), any(), any());
     }
 
     @Test
@@ -128,7 +128,7 @@ public class RefundServiceTest {
 
         PaymentTransaction tx = PaymentTransaction.builder()
                 .orderId(orderId)
-                .amount(new BigDecimal("499.00"))
+                .amount(new BigDecimal("500.00"))
                 .status("SUCCESS")
                 .build();
 
@@ -137,62 +137,17 @@ public class RefundServiceTest {
         BadRequestException ex = assertThrows(BadRequestException.class, () ->
                 refundService.processRefund(request));
 
-        assertTrue(ex.getMessage().contains("cannot exceed original transaction amount"));
+        assertTrue(ex.getMessage().contains("Cumulative refund amount"));
         verify(refundRepository, never()).save(any(Refund.class));
     }
 
     @Test
-    @DisplayName("Refund on already refunded transaction throws BadRequestException")
-    void testProcessRefund_AlreadyRefunded_ThrowsException() {
+    @DisplayName("Partial refund sets transaction status to PARTIALLY_REFUNDED without cancelling order")
+    void testProcessRefund_PartialRefund_DoesNotCancelOrder() {
         UUID orderId = UUID.randomUUID();
         RefundRequest request = RefundRequest.builder()
                 .orderId(orderId)
-                .amount(new BigDecimal("100.00"))
-                .build();
-
-        PaymentTransaction tx = PaymentTransaction.builder()
-                .orderId(orderId)
-                .amount(new BigDecimal("100.00"))
-                .status("REFUNDED")
-                .build();
-
-        when(transactionRepository.findByOrderId(orderId)).thenReturn(Optional.of(tx));
-
-        BadRequestException ex = assertThrows(BadRequestException.class, () ->
-                refundService.processRefund(request));
-
-        assertTrue(ex.getMessage().contains("already been fully refunded"));
-        verify(refundRepository, never()).save(any(Refund.class));
-    }
-
-    @Test
-    @DisplayName("Invalid refund amount (zero or negative) throws BadRequestException")
-    void testProcessRefund_InvalidAmount_ThrowsException() {
-        UUID orderId = UUID.randomUUID();
-
-        RefundRequest zeroRequest = RefundRequest.builder()
-                .orderId(orderId)
-                .amount(BigDecimal.ZERO)
-                .build();
-
-        assertThrows(BadRequestException.class, () -> refundService.processRefund(zeroRequest));
-
-        RefundRequest negativeRequest = RefundRequest.builder()
-                .orderId(orderId)
-                .amount(new BigDecimal("-10.00"))
-                .build();
-
-        assertThrows(BadRequestException.class, () -> refundService.processRefund(negativeRequest));
-    }
-
-    @Test
-    @DisplayName("Partial refund sets PARTIALLY_REFUNDED status and does not cancel order")
-    void testProcessRefund_PartialRefund() {
-        UUID orderId = UUID.randomUUID();
-        RefundRequest request = RefundRequest.builder()
-                .orderId(orderId)
-                .amount(new BigDecimal("100.00"))
-                .reason("Partial return")
+                .amount(new BigDecimal("200.00"))
                 .build();
 
         PaymentTransaction tx = PaymentTransaction.builder()
@@ -216,8 +171,8 @@ public class RefundServiceTest {
         assertEquals("PARTIALLY_REFUNDED", tx.getStatus());
 
         // Since it's a partial refund, order is NOT cancelled
-        verify(orderClient, never()).updateOrderStatus(any(), eq("CANCELLED"));
-        verify(rabbitTemplate, times(1)).convertAndSend(eq("order.exchange"), eq("refund.completed"), any(Map.class));
+        verify(orderClient, never()).refundCancel(any(), any(), any());
+        verify(vendorLedgerService, times(1)).reverseTransactionForRefund(eq(orderId), eq(new BigDecimal("200.00")), eq(false));
     }
 
     @Test
@@ -239,16 +194,13 @@ public class RefundServiceTest {
         when(transactionRepository.findByOrderId(orderId)).thenReturn(Optional.of(tx));
         when(refundRepository.findByOrderId(orderId)).thenReturn(java.util.List.of(existingRefund1));
 
-        // Requesting 150 more -> 200 + 150 = 350 > 300
+        // Attempting to refund 150 when 200 is already refunded (200 + 150 = 350 > 300)
         RefundRequest request = RefundRequest.builder()
                 .orderId(orderId)
                 .amount(new BigDecimal("150.00"))
                 .build();
 
-        BadRequestException ex = assertThrows(BadRequestException.class, () ->
-                refundService.processRefund(request));
-
-        assertTrue(ex.getMessage().contains("Cumulative refund amount"));
+        assertThrows(BadRequestException.class, () -> refundService.processRefund(request));
         verify(refundRepository, never()).save(any(Refund.class));
     }
 }

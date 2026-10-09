@@ -8,7 +8,7 @@ Write-Host "=================================================================" -
 $baseUrl = "http://localhost:8080"
 $rand = Get-Random
 $psql = "C:\Program Files\PostgreSQL\13\bin\psql.exe"
-$env:PGPASSWORD = "Rohith@358"
+$env:PGPASSWORD = if ($env:DB_PASSWORD) { $env:DB_PASSWORD } elseif ($env:PGPASSWORD) { $env:PGPASSWORD } else { "Rohith@358" }
 
 # Step 1: Find and kill Fulfillment Service (Port 8088)
 Write-Host "`n[Step 1] Stopping Fulfillment Service (Port 8088)..." -ForegroundColor Yellow

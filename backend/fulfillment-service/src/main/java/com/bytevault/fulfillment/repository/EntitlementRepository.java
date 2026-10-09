@@ -15,4 +15,5 @@ public interface EntitlementRepository extends JpaRepository<Entitlement, UUID> 
     List<Entitlement> findByUserIdAndProductIdOrderByGrantedAtDesc(UUID userId, UUID productId);
     boolean existsByOrderIdAndProductId(UUID orderId, UUID productId);
     Optional<Entitlement> findByOrderIdAndProductId(UUID orderId, UUID productId);
+    List<Entitlement> findByOrderId(UUID orderId);
 }

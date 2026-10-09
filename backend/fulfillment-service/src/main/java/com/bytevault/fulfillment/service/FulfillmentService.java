@@ -171,6 +171,29 @@ public class FulfillmentService {
         return saved;
     }
 
+    /**
+     * Idempotent bulk revoke for all entitlements belonging to an order.
+     * Called by Order Service when a full-refund CANCELLED transition is applied.
+     * Already-revoked entitlements are skipped; partial-refund callers must not use this.
+     */
+    @Transactional
+    public int revokeEntitlementsByOrderId(UUID orderId) {
+        List<Entitlement> entitlements = entitlementRepository.findByOrderId(orderId);
+        int revokedCount = 0;
+        for (Entitlement e : entitlements) {
+            if (!"REVOKED".equalsIgnoreCase(e.getStatus())) {
+                e.setStatus("REVOKED");
+                entitlementRepository.save(e);
+                log.info("[FulfillmentService] Entitlement REVOKED by order refund: id={}, user={}, product={}, orderId={}",
+                        e.getId(), e.getUserId(), e.getProductId(), orderId);
+                revokedCount++;
+            }
+        }
+        log.info("[FulfillmentService] Revoked {} entitlement(s) for orderId={}", revokedCount, orderId);
+        return revokedCount;
+    }
+
+
     @Transactional
     public String requestSecureDownload(UUID userId, UUID productId, String ipAddress, String userAgent) {
         log.info("[FulfillmentService] Secure download request: user={}, product={}", userId, productId);

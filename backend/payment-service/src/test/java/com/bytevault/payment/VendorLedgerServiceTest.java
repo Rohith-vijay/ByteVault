@@ -188,4 +188,96 @@ public class VendorLedgerServiceTest {
         assertEquals(savedLedger.getId(), result.getId());
         assertEquals(new BigDecimal("450.00"), result.getNetAmount());
     }
+
+    @Test
+    @DisplayName("Edge Case Rounding: 0.05 gross produces 0.01 fee and 0.04 net (fee + net == gross)")
+    void testRecordTransaction_EdgeCase_0_05() {
+        UUID vendorId = UUID.randomUUID();
+        UUID orderId = UUID.randomUUID();
+        BigDecimal gross = new BigDecimal("0.05");
+
+        when(ledgerRepository.findByOrderIdAndVendorId(orderId, vendorId)).thenReturn(Optional.empty());
+        when(ledgerRepository.save(any(VendorLedger.class))).thenAnswer(i -> i.getArgument(0));
+
+        VendorLedger result = vendorLedgerService.recordTransaction(vendorId, orderId, gross);
+
+        assertNotNull(result);
+        assertEquals(new BigDecimal("0.01"), result.getPlatformFee());
+        assertEquals(new BigDecimal("0.04"), result.getNetAmount());
+        assertEquals(gross, result.getPlatformFee().add(result.getNetAmount()));
+    }
+
+    @Test
+    @DisplayName("Edge Case Rounding: 33.33 gross produces 3.33 fee and 30.00 net (fee + net == gross)")
+    void testRecordTransaction_EdgeCase_33_33() {
+        UUID vendorId = UUID.randomUUID();
+        UUID orderId = UUID.randomUUID();
+        BigDecimal gross = new BigDecimal("33.33");
+
+        when(ledgerRepository.findByOrderIdAndVendorId(orderId, vendorId)).thenReturn(Optional.empty());
+        when(ledgerRepository.save(any(VendorLedger.class))).thenAnswer(i -> i.getArgument(0));
+
+        VendorLedger result = vendorLedgerService.recordTransaction(vendorId, orderId, gross);
+
+        assertNotNull(result);
+        assertEquals(new BigDecimal("3.33"), result.getPlatformFee());
+        assertEquals(new BigDecimal("30.00"), result.getNetAmount());
+        assertEquals(gross, result.getPlatformFee().add(result.getNetAmount()));
+    }
+
+    @Test
+    @DisplayName("Refund reversal: Full refund sets status to REFUNDED and sets refundedAmount = gross")
+    void testReverseTransactionForRefund_FullRefund() {
+        UUID orderId = UUID.randomUUID();
+        UUID vendor1 = UUID.randomUUID();
+        UUID vendor2 = UUID.randomUUID();
+
+        VendorLedger entry1 = VendorLedger.builder()
+                .id(UUID.randomUUID()).orderId(orderId).vendorId(vendor1)
+                .grossAmount(new BigDecimal("100.00")).platformFee(new BigDecimal("10.00"))
+                .netAmount(new BigDecimal("90.00")).status("AVAILABLE").build();
+
+        VendorLedger entry2 = VendorLedger.builder()
+                .id(UUID.randomUUID()).orderId(orderId).vendorId(vendor2)
+                .grossAmount(new BigDecimal("200.00")).platformFee(new BigDecimal("20.00"))
+                .netAmount(new BigDecimal("180.00")).status("AVAILABLE").build();
+
+        when(ledgerRepository.findByOrderId(orderId)).thenReturn(List.of(entry1, entry2));
+
+        vendorLedgerService.reverseTransactionForRefund(orderId, new BigDecimal("300.00"), true);
+
+        assertEquals("REFUNDED", entry1.getStatus());
+        assertEquals(new BigDecimal("100.00"), entry1.getRefundedAmount());
+        assertEquals("REFUNDED", entry2.getStatus());
+        assertEquals(new BigDecimal("200.00"), entry2.getRefundedAmount());
+        verify(ledgerRepository, times(2)).save(any(VendorLedger.class));
+    }
+
+    @Test
+    @DisplayName("Refund reversal: Partial refund proportionally reverses vendor gross amounts")
+    void testReverseTransactionForRefund_PartialRefund() {
+        UUID orderId = UUID.randomUUID();
+        UUID vendor1 = UUID.randomUUID();
+        UUID vendor2 = UUID.randomUUID();
+
+        VendorLedger entry1 = VendorLedger.builder()
+                .id(UUID.randomUUID()).orderId(orderId).vendorId(vendor1)
+                .grossAmount(new BigDecimal("100.00")).platformFee(new BigDecimal("10.00"))
+                .netAmount(new BigDecimal("90.00")).status("AVAILABLE").build();
+
+        VendorLedger entry2 = VendorLedger.builder()
+                .id(UUID.randomUUID()).orderId(orderId).vendorId(vendor2)
+                .grossAmount(new BigDecimal("100.00")).platformFee(new BigDecimal("10.00"))
+                .netAmount(new BigDecimal("90.00")).status("AVAILABLE").build();
+
+        when(ledgerRepository.findByOrderId(orderId)).thenReturn(List.of(entry1, entry2));
+
+        // 50.00 refund on 200.00 total gross -> 25.00 reversed per vendor
+        vendorLedgerService.reverseTransactionForRefund(orderId, new BigDecimal("50.00"), false);
+
+        assertEquals("PARTIALLY_REFUNDED", entry1.getStatus());
+        assertEquals(new BigDecimal("25.00"), entry1.getRefundedAmount());
+        assertEquals("PARTIALLY_REFUNDED", entry2.getStatus());
+        assertEquals(new BigDecimal("25.00"), entry2.getRefundedAmount());
+    }
 }

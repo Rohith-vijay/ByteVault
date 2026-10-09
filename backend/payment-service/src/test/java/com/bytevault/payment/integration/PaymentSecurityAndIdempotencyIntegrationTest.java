@@ -14,7 +14,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.http.ResponseEntity;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -42,7 +41,7 @@ public class PaymentSecurityAndIdempotencyIntegrationTest {
     private com.bytevault.payment.service.PaymentOrderSyncService paymentOrderSyncService;
 
     @Mock
-    private RabbitTemplate rabbitTemplate;
+    private com.bytevault.payment.client.OrderClient orderClient;
 
     @Mock
     private com.bytevault.payment.service.VendorLedgerService vendorLedgerService;
@@ -60,7 +59,7 @@ public class PaymentSecurityAndIdempotencyIntegrationTest {
     void setUp() {
         ReflectionTestUtils.setField(razorpayPaymentService, "keyId", "rzp_test_id");
         ReflectionTestUtils.setField(razorpayPaymentService, "keySecret", keySecret);
-        paymentController = new PaymentController(razorpayPaymentService, vendorLedgerService, refundService, rabbitTemplate, transactionRepository, paymentOrderSyncService);
+        paymentController = new PaymentController(razorpayPaymentService, vendorLedgerService, refundService, transactionRepository, paymentOrderSyncService, orderClient);
     }
 
     private String calculateHmac(String data, String secret) throws Exception {
@@ -124,7 +123,7 @@ public class PaymentSecurityAndIdempotencyIntegrationTest {
         assertThrows(IllegalArgumentException.class, () -> paymentController.verifyPayment(request));
 
         verify(paymentOrderSyncService, never()).syncPaymentToOrder(any());
-        verify(rabbitTemplate, times(1)).convertAndSend(eq("order.exchange"), eq("payment.failed"), any(Map.class));
+        verify(orderClient, times(1)).markOrderFailed(any(UUID.class), any(), eq("ROLE_INTERNAL_SERVICE"), any());
     }
 
     @Test
@@ -150,8 +149,8 @@ public class PaymentSecurityAndIdempotencyIntegrationTest {
         assertEquals("SUCCESS", response.getBody().get("status"));
         assertTrue(response.getBody().get("message").toString().contains("idempotent"));
 
-        // Verify no duplicate Feign call or RabbitMQ event
+        // Verify no duplicate Feign call or failure call
         verify(paymentOrderSyncService, never()).syncPaymentToOrder(any());
-        verify(rabbitTemplate, never()).convertAndSend(anyString(), anyString(), any(Map.class));
+        verify(orderClient, never()).markOrderFailed(any(UUID.class), any(), any(), any());
     }
 }
