@@ -321,5 +321,84 @@ public class PaymentServiceTest {
         assertThrows(org.springframework.security.access.AccessDeniedException.class, () ->
                 paymentController.getAllTransactionsAdmin("ROLE_CUSTOMER", null));
     }
+
+    @Test
+    @DisplayName("Simulator Safety: createOrder creates mock order when simulator enabled with dummy keys")
+    void testSimulatorSafety_EnabledWithDummyKeys_CreatesMockOrder() throws Exception {
+        RazorpayPaymentService service = new RazorpayPaymentService(mock(com.bytevault.payment.service.RazorpayClientService.class));
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "simulatorEnabled", true);
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "keyId", "dummy");
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "keySecret", "dummy");
+
+        com.bytevault.payment.dto.PaymentOrderResponse res = service.createOrder(
+                com.bytevault.payment.dto.PaymentOrderRequest.builder()
+                        .amount(new BigDecimal("100.00"))
+                        .currency("INR")
+                        .receipt(UUID.randomUUID().toString())
+                        .build()
+        );
+
+        assertNotNull(res);
+        assertTrue(res.getOrderId().startsWith("order_mock_"));
+    }
+
+    @Test
+    @DisplayName("Simulator Safety: createOrder throws IllegalStateException when simulator disabled and no real keys")
+    void testSimulatorSafety_DisabledWithDummyKeys_ThrowsException() {
+        RazorpayPaymentService service = new RazorpayPaymentService(mock(com.bytevault.payment.service.RazorpayClientService.class));
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "simulatorEnabled", false);
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "keyId", "dummy");
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "keySecret", "dummy");
+
+        assertThrows(IllegalStateException.class, () -> service.createOrder(
+                com.bytevault.payment.dto.PaymentOrderRequest.builder()
+                        .amount(new BigDecimal("100.00"))
+                        .currency("INR")
+                        .receipt(UUID.randomUUID().toString())
+                        .build()
+        ));
+    }
+
+    @Test
+    @DisplayName("Simulator Safety: Auto-disables simulator when real Razorpay keys are detected")
+    void testSimulatorSafety_AutoDisablesWhenRealKeysDetected() throws Exception {
+        com.bytevault.payment.service.RazorpayClientService mockClient = mock(com.bytevault.payment.service.RazorpayClientService.class);
+        com.razorpay.Order mockOrder = mock(com.razorpay.Order.class);
+        when(mockOrder.get("id")).thenReturn("order_real_rzp_9999");
+        when(mockClient.createOrder(any(), any(), any())).thenReturn(mockOrder);
+
+        RazorpayPaymentService service = new RazorpayPaymentService(mockClient);
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "simulatorEnabled", true);
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "keyId", "rzp_live_abc123xyz");
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "keySecret", "secret_live_999");
+
+        com.bytevault.payment.dto.PaymentOrderResponse res = service.createOrder(
+                com.bytevault.payment.dto.PaymentOrderRequest.builder()
+                        .amount(new BigDecimal("250.00"))
+                        .currency("INR")
+                        .receipt(UUID.randomUUID().toString())
+                        .build()
+        );
+
+        assertNotNull(res);
+        assertEquals("order_real_rzp_9999", res.getOrderId());
+        verify(mockClient, times(1)).createOrder(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("Simulator Safety: verifyPayment rejects mock order when simulator is disabled")
+    void testSimulatorSafety_VerifyMockOrderRejectedWhenSimulatorDisabled() {
+        RazorpayPaymentService service = new RazorpayPaymentService(mock(com.bytevault.payment.service.RazorpayClientService.class));
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "simulatorEnabled", false);
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "keyId", "dummy");
+
+        PaymentVerifyRequest verifyReq = PaymentVerifyRequest.builder()
+                .razorpayOrderId("order_mock_12345678")
+                .razorpayPaymentId("pay_mock_1234")
+                .razorpaySignature("sig_mock_1234")
+                .build();
+
+        assertThrows(IllegalStateException.class, () -> service.verifyPayment(verifyReq));
+    }
 }
 

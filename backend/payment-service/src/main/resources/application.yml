@@ -28,6 +28,9 @@ eureka:
 app:
   gateway:
     secret: ${GATEWAY_SECRET:platform_default_gateway_shared_secret}
+  payment:
+    simulator:
+      enabled: ${PAYMENT_SIMULATOR_ENABLED:true}
 
 razorpay:
   key-id: ${RAZORPAY_KEY_ID:dummy}

@@ -26,23 +26,48 @@ public class RazorpayPaymentService implements PaymentService {
     @Autowired(required = false)
     private PaymentSimulator paymentSimulator;
 
+    @Value("${app.payment.simulator.enabled:false}")
+    private boolean simulatorEnabled;
+
     @Value("${razorpay.key-id:dummy}")
     private String keyId;
 
     @Value("${razorpay.key-secret:dummy}")
     private String keySecret;
 
+    @jakarta.annotation.PostConstruct
+    public void init() {
+        if (isSimulatorActive()) {
+            log.warn("====================================================================");
+            log.warn("[SECURITY WARNING] Payment Simulator is ENABLED.");
+            log.warn("Simulated checkout and payment verification are active.");
+            log.warn("DO NOT RUN WITH SIMULATOR ENABLED IN PRODUCTION ENVIRONMENTS.");
+            log.warn("====================================================================");
+        } else if (simulatorEnabled && hasRealKeys()) {
+            log.info("[RazorpayPaymentService] Real Razorpay API keys detected. Simulator auto-disabled.");
+        }
+    }
+
+    public boolean isSimulatorActive() {
+        return simulatorEnabled && !hasRealKeys();
+    }
+
+    private boolean hasRealKeys() {
+        return keyId != null && !keyId.trim().isEmpty()
+                && !"dummy".equalsIgnoreCase(keyId.trim())
+                && !"dev_razorpay_key".equalsIgnoreCase(keyId.trim());
+    }
+
     @Override
     public PaymentOrderResponse createOrder(PaymentOrderRequest request) throws Exception {
         String orderId;
-        boolean isSandbox = "dev_razorpay_key".equals(keyId) || "dummy".equals(keyId) || keyId == null || keyId.trim().isEmpty();
-        
-        if (isSandbox) {
-            if (paymentSimulator == null) {
-                throw new IllegalArgumentException("Sandbox checkout simulation is strictly disabled in production.");
-            }
+        boolean simulatorActive = isSimulatorActive();
+
+        if (simulatorActive) {
             orderId = "order_mock_" + UUID.randomUUID().toString().substring(0, 8);
             log.info("[RazorpayPaymentService] Simulated order created for Sandbox checkout: {}", orderId);
+        } else if (!hasRealKeys()) {
+            throw new IllegalStateException("Payment simulation is disabled and no valid Razorpay credentials are configured.");
         } else {
             Order order = razorpayClientService.createOrder(request.getAmount(), request.getCurrency(), request.getReceipt());
             orderId = order.get("id");
@@ -53,7 +78,7 @@ public class RazorpayPaymentService implements PaymentService {
                 .orderId(orderId)
                 .amount(request.getAmount().multiply(BigDecimal.valueOf(100)).longValue())
                 .currency(request.getCurrency() != null ? request.getCurrency() : "INR")
-                .key(isSandbox ? "dummy" : keyId)
+                .key(simulatorActive ? "dummy" : keyId)
                 .build();
     }
 
@@ -62,8 +87,8 @@ public class RazorpayPaymentService implements PaymentService {
         boolean isMock = request.getRazorpayOrderId() != null && request.getRazorpayOrderId().startsWith("order_mock_");
 
         if (isMock) {
-            if (paymentSimulator == null) {
-                throw new IllegalArgumentException("Sandbox payment verification is strictly disabled in production.");
+            if (!isSimulatorActive()) {
+                throw new IllegalStateException("Sandbox payment verification is disabled.");
             }
             log.info("[RazorpayPaymentService] Verifying mock order sandbox transaction: {}", request.getRazorpayOrderId());
         } else {
