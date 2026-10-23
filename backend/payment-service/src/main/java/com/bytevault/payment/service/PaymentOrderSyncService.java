@@ -18,7 +18,7 @@ import java.time.LocalDateTime;
 @RequiredArgsConstructor
 public class PaymentOrderSyncService {
 
-    public static final int MAX_SYNC_ATTEMPTS = 5;
+    public static final int MAX_SYNC_ATTEMPTS = 20;
 
     private final OrderClient orderClient;
     private final PaymentTransactionRepository transactionRepository;

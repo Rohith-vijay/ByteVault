@@ -110,7 +110,7 @@ public class PaymentOrderSyncAndReconcilerReliabilityTest {
                 .amount(new BigDecimal("199.00"))
                 .status("SUCCESS")
                 .orderSyncStatus("PENDING")
-                .syncAttempts(4) // 5th attempt will exceed
+                .syncAttempts(PaymentOrderSyncService.MAX_SYNC_ATTEMPTS - 1)
                 .build();
 
         doThrow(new RuntimeException("Connection timeout"))
@@ -120,7 +120,7 @@ public class PaymentOrderSyncAndReconcilerReliabilityTest {
 
         assertFalse(result);
         assertEquals("FAILED", tx.getOrderSyncStatus());
-        assertEquals(5, tx.getSyncAttempts());
+        assertEquals(PaymentOrderSyncService.MAX_SYNC_ATTEMPTS, tx.getSyncAttempts());
         assertNull(tx.getNextSyncRetryAt());
         assertTrue(tx.getLastSyncError().contains("Max sync attempts"));
     }

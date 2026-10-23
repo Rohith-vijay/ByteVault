@@ -42,7 +42,7 @@ public class OutboxPublisherService {
     @Value("${app.gateway.secret:platform_default_gateway_shared_secret}")
     private String gatewaySecret;
 
-    public static final int MAX_RETRIES = 5;
+    public static final int MAX_RETRIES = 20;
     private static final int BATCH_SIZE = 20;
 
     public void setFulfillmentClient(FulfillmentClient fulfillmentClient) {
