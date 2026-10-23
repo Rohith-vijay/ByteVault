@@ -36,3 +36,7 @@ app:
       email: ${APP_MAIL_FROM_EMAIL:info@example.com}
   gateway:
     secret: ${GATEWAY_SECRET:platform_default_gateway_shared_secret}
+
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %5p [%X{correlationId}] --- [%t] %-40.40logger{39} : %m%n"

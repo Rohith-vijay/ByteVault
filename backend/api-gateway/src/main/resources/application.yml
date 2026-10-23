@@ -157,3 +157,7 @@ springdoc:
         url: /v3/api-docs/fulfillment-service
       - name: 7. Notification Service
         url: /v3/api-docs/notification-service
+
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %5p [%X{correlationId}] --- [%t] %-40.40logger{39} : %m%n"

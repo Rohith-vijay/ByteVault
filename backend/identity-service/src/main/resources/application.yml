@@ -48,3 +48,7 @@ app:
 
 jwt:
   refresh-expiration: ${JWT_REFRESH_EXPIRATION:604800000} # 7 days
+
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %5p [%X{correlationId}] --- [%t] %-40.40logger{39} : %m%n"

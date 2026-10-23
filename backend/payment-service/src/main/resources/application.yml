@@ -36,3 +36,7 @@ razorpay:
   key-id: ${RAZORPAY_KEY_ID:dummy}
   key-secret: ${RAZORPAY_KEY_SECRET:dummy}
 
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %5p [%X{correlationId}] --- [%t] %-40.40logger{39} : %m%n"
+

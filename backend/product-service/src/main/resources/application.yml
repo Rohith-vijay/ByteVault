@@ -42,3 +42,7 @@ app:
       bucket: ${MINIO_BUCKET:bytevault-assets}
     local-fallback-dir: ${LOCAL_STORAGE_DIR:temp-assets}
 
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %5p [%X{correlationId}] --- [%t] %-40.40logger{39} : %m%n"
+
