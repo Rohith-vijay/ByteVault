@@ -100,10 +100,11 @@ async function runAll() {
   });
   const vendorToken = vRegRes.body?.data?.token || vRegRes.body?.token;
   const vendorId = decodeJwt(vendorToken)?.id;
-  await request('http://localhost:8080/api/v1/users/me/vendor-profile', {
+  const profRes = await request('http://localhost:8080/api/v1/users/me/vendor-profile', {
     headers: { 'Authorization': `Bearer ${vendorToken}` }
   });
-  const approveRes = await request(`http://localhost:8080/api/v1/users/admin/vendors/${vendorId}/approve`, {
+  const vendorProfileId = profRes.body?.data?.id || profRes.body?.id || vendorId;
+  const approveRes = await request(`http://localhost:8080/api/v1/users/admin/vendors/${vendorProfileId}/approve`, {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${adminToken}` }
   });

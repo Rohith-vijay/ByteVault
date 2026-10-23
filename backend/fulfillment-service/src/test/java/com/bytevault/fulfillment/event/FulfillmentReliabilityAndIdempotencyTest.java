@@ -32,6 +32,11 @@ public class FulfillmentReliabilityAndIdempotencyTest {
 
     private final String gatewaySecret = "platform_default_gateway_shared_secret";
 
+    @BeforeEach
+    void setUp() {
+        org.springframework.test.util.ReflectionTestUtils.setField(fulfillmentController, "gatewaySecret", gatewaySecret);
+    }
+
     @Test
     @DisplayName("Synchronous internal fulfillment execution succeeds and returns 200 OK")
     void testFulfillOrderInternal_Success() {
@@ -48,6 +53,26 @@ public class FulfillmentReliabilityAndIdempotencyTest {
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertTrue(response.getBody().success());
         verify(fulfillmentService, times(1)).fulfillDigitalOrder(orderId, userId, List.of(productId));
+    }
+
+    @Test
+    @DisplayName("Synchronous internal fulfillment rejects invalid or missing gateway secret (403)")
+    void testFulfillOrderInternal_InvalidGatewaySecret_Forbidden() {
+        UUID orderId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        UUID productId = UUID.randomUUID();
+
+        // Missing secret
+        ResponseEntity<ApiResponse<Void>> resMissing = fulfillmentController.fulfillOrderInternal(
+                null, orderId, userId, List.of(productId));
+        assertEquals(HttpStatus.FORBIDDEN, resMissing.getStatusCode());
+
+        // Invalid secret
+        ResponseEntity<ApiResponse<Void>> resInvalid = fulfillmentController.fulfillOrderInternal(
+                "wrong_secret", orderId, userId, List.of(productId));
+        assertEquals(HttpStatus.FORBIDDEN, resInvalid.getStatusCode());
+
+        verify(fulfillmentService, never()).fulfillDigitalOrder(any(), any(), any());
     }
 
     @Test
@@ -83,5 +108,39 @@ public class FulfillmentReliabilityAndIdempotencyTest {
 
         assertThrows(RuntimeException.class, () ->
                 fulfillmentController.fulfillOrderInternal(gatewaySecret, orderId, userId, List.of(productId)));
+    }
+
+    @Test
+    @DisplayName("Internal revoke-by-order succeeds with valid gateway secret and returns revoked count")
+    void testRevokeEntitlementsByOrderInternal_Success() {
+        UUID orderId = UUID.randomUUID();
+        when(fulfillmentService.revokeEntitlementsByOrderId(orderId)).thenReturn(2);
+
+        ResponseEntity<ApiResponse<java.util.Map<String, Object>>> response =
+                fulfillmentController.revokeEntitlementsByOrderInternal(gatewaySecret, "ROLE_INTERNAL_SERVICE", orderId);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertTrue(response.getBody().success());
+        assertEquals(2, response.getBody().data().get("revokedCount"));
+        assertEquals(orderId, response.getBody().data().get("orderId"));
+        verify(fulfillmentService, times(1)).revokeEntitlementsByOrderId(orderId);
+    }
+
+    @Test
+    @DisplayName("Internal revoke-by-order rejects missing or invalid gateway secret with 403 Forbidden")
+    void testRevokeEntitlementsByOrderInternal_InvalidGatewaySecret_Forbidden() {
+        UUID orderId = UUID.randomUUID();
+
+        // Missing secret
+        ResponseEntity<ApiResponse<java.util.Map<String, Object>>> resMissing =
+                fulfillmentController.revokeEntitlementsByOrderInternal(null, "ROLE_INTERNAL_SERVICE", orderId);
+        assertEquals(HttpStatus.FORBIDDEN, resMissing.getStatusCode());
+
+        // Invalid secret
+        ResponseEntity<ApiResponse<java.util.Map<String, Object>>> resInvalid =
+                fulfillmentController.revokeEntitlementsByOrderInternal("wrong_secret", "ROLE_INTERNAL_SERVICE", orderId);
+        assertEquals(HttpStatus.FORBIDDEN, resInvalid.getStatusCode());
+
+        verify(fulfillmentService, never()).revokeEntitlementsByOrderId(any());
     }
 }

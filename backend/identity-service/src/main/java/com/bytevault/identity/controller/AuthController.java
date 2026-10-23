@@ -101,10 +101,18 @@ public class AuthController {
         return ResponseEntity.ok(ApiResponse.success("Password has been reset successfully. Please log in with your new credentials."));
     }
 
+    @org.springframework.beans.factory.annotation.Value("${app.oauth.enabled:false}")
+    private boolean oauthEnabled;
+
     @PostMapping("/oauth")
     public ResponseEntity<AuthenticationResponse> oauthLogin(
             @Valid @RequestBody OAuthLoginRequest request,
             HttpServletResponse response) {
+        if (!oauthEnabled) {
+            throw new com.bytevault.common.exception.BadRequestException(
+                    "OAuth authentication is disabled by default: Unverified third-party ID tokens are rejected. Production IdP cryptographic verification required."
+            );
+        }
         AuthenticationResponse auth = identityService.oauthLogin(request);
         if (auth.getToken() != null) setCookie(response, auth.getToken());
         if (auth.getRefreshToken() != null) setRefreshCookie(response, auth.getRefreshToken());

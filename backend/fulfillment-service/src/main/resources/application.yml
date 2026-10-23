@@ -7,7 +7,7 @@ spring:
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/fulfillment_db}
     username: ${DB_USER:postgres}
-    password: ${DB_PASSWORD:Rohith@358}
+    password: ${DB_PASSWORD:}
     driver-class-name: ${DB_DRIVER:org.postgresql.Driver}
   jpa:
     hibernate:

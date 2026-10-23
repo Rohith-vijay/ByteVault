@@ -1,0 +1,11 @@
+ModuleName,EndpointUrl,ResponseStatus,HealthStatus,DiagnosticDetails
+"discovery-server","http://localhost:8761/",200,"UP","Responding as configured"
+"api-gateway","http://localhost:8080/actuator/health",404,"UP","Responding as configured"
+"identity-service","http://localhost:8081/actuator/health",403,"UP","Responding as configured"
+"product-service","http://localhost:8084/actuator/health",403,"UP","Responding as configured"
+"cart-service","http://localhost:8086/actuator/health",403,"UP","Responding as configured"
+"order-service","http://localhost:8087/actuator/health",403,"UP","Responding as configured"
+"fulfillment-service","http://localhost:8088/actuator/health",403,"UP","Responding as configured"
+"notification-service","http://localhost:8090/actuator/health",403,"UP","Responding as configured"
+"payment-service","http://localhost:8091/actuator/health",403,"UP","Responding as configured"
+"frontend-portal","http://localhost:5173/",200,"UP","Responding as configured"

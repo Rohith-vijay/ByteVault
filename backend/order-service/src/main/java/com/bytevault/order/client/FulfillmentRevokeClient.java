@@ -16,6 +16,7 @@ import java.util.UUID;
  * Uses CommonFeignConfig so X-Gateway-Secret is injected automatically.
  */
 @FeignClient(name = "fulfillment-service", contextId = "fulfillmentRevokeClient",
+        url = "${app.services.fulfillment-service.url:}",
         configuration = CommonFeignConfig.class)
 public interface FulfillmentRevokeClient {
 

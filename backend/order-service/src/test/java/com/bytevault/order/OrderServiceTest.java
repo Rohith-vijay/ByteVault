@@ -43,8 +43,16 @@ public class OrderServiceTest {
     @Mock
     private com.bytevault.order.client.InventoryClient inventoryClient;
 
+    @Mock
+    private com.bytevault.order.client.FulfillmentRevokeClient fulfillmentRevokeClient;
+
     @InjectMocks
     private OrderService orderService;
+
+    @org.junit.jupiter.api.BeforeEach
+    void setUp() {
+        orderService.setFulfillmentRevokeClient(fulfillmentRevokeClient);
+    }
 
     @Test
     @DisplayName("Digital order creation with verified PUBLISHED price snapshots from product-service")
@@ -528,5 +536,92 @@ public class OrderServiceTest {
 
         assertThrows(BadRequestException.class, () ->
                 orderService.createOrder(userId, "buyer@bytevault.com", "Buyer", negativeQtyReq));
+    }
+
+    @Test
+    @DisplayName("applyRefundCancel moves order to CANCELLED and invokes Fulfillment revoke")
+    void testApplyRefundCancel_Success_TriggersRevocation() {
+        UUID orderId = UUID.randomUUID();
+        Order order = Order.builder()
+                .id(orderId)
+                .status(OrderStatus.PAID)
+                .orderType(OrderType.DIGITAL)
+                .orderNumber("ORD-REFUND-101")
+                .totalAmount(BigDecimal.valueOf(199.00))
+                .build();
+
+        when(orderRepository.findById(orderId)).thenReturn(java.util.Optional.of(order));
+        when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        OrderResponse response = orderService.applyRefundCancel(orderId);
+
+        assertNotNull(response);
+        assertEquals(OrderStatus.CANCELLED, order.getStatus());
+        verify(orderRepository, times(1)).save(order);
+        verify(fulfillmentRevokeClient, times(1)).revokeEntitlementsByOrder(orderId);
+    }
+
+    @Test
+    @DisplayName("applyRefundCancel on already-cancelled order is idempotent and skips save")
+    void testApplyRefundCancel_AlreadyCancelled_Idempotent() {
+        UUID orderId = UUID.randomUUID();
+        Order order = Order.builder()
+                .id(orderId)
+                .status(OrderStatus.CANCELLED)
+                .orderType(OrderType.DIGITAL)
+                .orderNumber("ORD-REFUND-102")
+                .totalAmount(BigDecimal.valueOf(199.00))
+                .build();
+
+        when(orderRepository.findById(orderId)).thenReturn(java.util.Optional.of(order));
+
+        OrderResponse response = orderService.applyRefundCancel(orderId);
+
+        assertNotNull(response);
+        assertEquals("CANCELLED", response.getStatus());
+        verify(orderRepository, never()).save(any());
+        verify(fulfillmentRevokeClient, never()).revokeEntitlementsByOrder(any());
+    }
+
+    @Test
+    @DisplayName("applyRefundCancel still cancels order even if fulfillment revoke throws exception")
+    void testApplyRefundCancel_FulfillmentRevokeThrows_OrderStillCancelled() {
+        UUID orderId = UUID.randomUUID();
+        Order order = Order.builder()
+                .id(orderId)
+                .status(OrderStatus.PAID)
+                .orderType(OrderType.DIGITAL)
+                .orderNumber("ORD-REFUND-103")
+                .totalAmount(BigDecimal.valueOf(299.00))
+                .build();
+
+        when(orderRepository.findById(orderId)).thenReturn(java.util.Optional.of(order));
+        when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        doThrow(new RuntimeException("Fulfillment connection timeout"))
+                .when(fulfillmentRevokeClient).revokeEntitlementsByOrder(orderId);
+
+        OrderResponse response = orderService.applyRefundCancel(orderId);
+
+        assertNotNull(response);
+        assertEquals(OrderStatus.CANCELLED, order.getStatus());
+        verify(orderRepository, times(1)).save(order);
+    }
+
+    @Test
+    @DisplayName("applyRefundCancel on non-cancellable order status throws BadRequestException")
+    void testApplyRefundCancel_InvalidStatus_ThrowsBadRequest() {
+        UUID orderId = UUID.randomUUID();
+        Order order = Order.builder()
+                .id(orderId)
+                .status(OrderStatus.COMPLETED)
+                .orderNumber("ORD-REFUND-104")
+                .totalAmount(BigDecimal.valueOf(199.00))
+                .build();
+
+        when(orderRepository.findById(orderId)).thenReturn(java.util.Optional.of(order));
+
+        assertThrows(BadRequestException.class, () -> orderService.applyRefundCancel(orderId));
+        verify(orderRepository, never()).save(any());
+        verify(fulfillmentRevokeClient, never()).revokeEntitlementsByOrder(any());
     }
 }

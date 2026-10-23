@@ -33,4 +33,6 @@ public interface PaymentTransactionRepository extends JpaRepository<PaymentTrans
            "AND pt.orderId IS NOT NULL " +
            "AND pt.orderId NOT IN (SELECT vl.orderId FROM VendorLedger vl)")
     List<PaymentTransaction> findSuccessfulTransactionsMissingLedger();
+
+    List<PaymentTransaction> findByOrderSyncStatus(String orderSyncStatus);
 }

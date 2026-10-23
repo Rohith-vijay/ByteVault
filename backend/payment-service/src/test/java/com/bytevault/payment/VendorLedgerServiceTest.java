@@ -103,6 +103,47 @@ public class VendorLedgerServiceTest {
     }
 
     @Test
+    @DisplayName("Sequential replay idempotency: Calling recordTransaction twice sequentially for the same vendor/order produces exactly one save and returns consistent ledger record")
+    void testRecordTransaction_SequentialReplayIdempotency() {
+        UUID vendorId = UUID.randomUUID();
+        UUID orderId = UUID.randomUUID();
+        BigDecimal gross = new BigDecimal("250.00");
+
+        UUID generatedId = UUID.randomUUID();
+        VendorLedger savedLedger = VendorLedger.builder()
+                .id(generatedId)
+                .vendorId(vendorId)
+                .orderId(orderId)
+                .grossAmount(gross)
+                .platformFee(new BigDecimal("25.00"))
+                .netAmount(new BigDecimal("225.00"))
+                .status("AVAILABLE")
+                .build();
+
+        // 1st call: not found, save succeeds
+        // 2nd call: found existing savedLedger
+        when(ledgerRepository.findByOrderIdAndVendorId(orderId, vendorId))
+                .thenReturn(Optional.empty())
+                .thenReturn(Optional.of(savedLedger));
+
+        when(ledgerRepository.save(any(VendorLedger.class))).thenReturn(savedLedger);
+
+        // First call
+        VendorLedger firstCall = vendorLedgerService.recordTransaction(vendorId, orderId, gross);
+        // Second call (replay)
+        VendorLedger secondCall = vendorLedgerService.recordTransaction(vendorId, orderId, gross);
+
+        assertNotNull(firstCall);
+        assertNotNull(secondCall);
+        assertEquals(firstCall.getId(), secondCall.getId());
+        assertEquals(new BigDecimal("225.00"), secondCall.getNetAmount());
+
+        // Exactly one DB insert occurred across both calls
+        verify(ledgerRepository, times(1)).save(any(VendorLedger.class));
+    }
+
+
+    @Test
     @DisplayName("Invalid gross amount (negative or zero) -> Throws IllegalArgumentException")
     void testRecordTransaction_InvalidAmount_ThrowsException() {
         UUID vendorId = UUID.randomUUID();

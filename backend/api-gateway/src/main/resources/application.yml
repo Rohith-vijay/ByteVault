@@ -3,7 +3,7 @@ server:
   ssl:
     enabled: ${SSL_ENABLED:false}
     key-store: classpath:keystore.p12
-    key-store-password: bytevault
+    key-store-password: ${SSL_KEYSTORE_PASSWORD:bytevault}
     key-store-type: PKCS12
     key-alias: bytevault
 

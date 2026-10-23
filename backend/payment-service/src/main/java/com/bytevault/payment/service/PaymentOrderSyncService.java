@@ -170,6 +170,30 @@ public class PaymentOrderSyncService {
         }
     }
 
+    @org.springframework.scheduling.annotation.Scheduled(fixedDelayString = "${app.payment.refund-reconcile-interval-ms:60000}")
+    public void reconcilePendingRefundCancellations() {
+        try {
+            java.util.List<PaymentTransaction> pendingRefunds = transactionRepository.findByOrderSyncStatus("REFUND_PENDING");
+            if (pendingRefunds != null && !pendingRefunds.isEmpty()) {
+                log.info("[RefundReconciliation] Found {} pending refund cancellation(s), retrying sync...", pendingRefunds.size());
+                for (PaymentTransaction tx : pendingRefunds) {
+                    if (tx.getOrderId() != null) {
+                        try {
+                            orderClient.refundCancel(tx.getOrderId(), gatewaySecret, "ROLE_INTERNAL_SERVICE");
+                            tx.setOrderSyncStatus("REFUND_SYNCED");
+                            transactionRepository.save(tx);
+                            log.info("[RefundReconciliation] Successfully reconciled refund-cancel for orderId={}", tx.getOrderId());
+                        } catch (Exception e) {
+                            log.warn("[RefundReconciliation] Retry refund-cancel failed for orderId={}: {}", tx.getOrderId(), e.getMessage());
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.warn("[RefundReconciliation] Error during refund reconciliation check: {}", e.getMessage());
+        }
+    }
+
     private String sanitizeError(int status, String message) {
         if (message == null) return "HTTP " + status;
         // Truncate and strip any secret patterns

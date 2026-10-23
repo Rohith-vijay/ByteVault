@@ -91,4 +91,22 @@ class IdentitySecurityTest {
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().is3xxRedirection()); // Redirects on invalid token
     }
+
+    @Test
+    @DisplayName("Security: Forged or unverified OAuth token request is rejected with 400 Bad Request")
+    void testOauthEndpoint_ForgedOrDisabled_Rejected() throws Exception {
+        String forgedPayload = """
+            {
+                "provider": "google",
+                "oauthId": "fake-forged-google-sub-id",
+                "email": "attacker@evil.com",
+                "fullName": "Fake User"
+            }
+        """;
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/api/v1/auth/oauth")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(forgedPayload))
+                .andExpect(status().isBadRequest());
+    }
 }
+

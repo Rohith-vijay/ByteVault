@@ -177,16 +177,17 @@ async function runTests() {
     }
 
     // Initialize vendor profile
-    await request('http://localhost:8080/api/v1/users/me/vendor-profile', {
+    const profRes = await request('http://localhost:8080/api/v1/users/me/vendor-profile', {
       headers: {
         'Authorization': `Bearer ${vendorToken}`
       }
     });
+    const vendorProfileId = profRes.body?.data?.id || profRes.body?.id || vendorId;
 
     // Approve vendor via Admin API
     let approveRes = null;
-    if (vendorId && adminToken) {
-      approveRes = await request(`http://localhost:8080/api/v1/users/admin/vendors/${vendorId}/approve`, {
+    if (vendorProfileId && adminToken) {
+      approveRes = await request(`http://localhost:8080/api/v1/users/admin/vendors/${vendorProfileId}/approve`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${adminToken}`

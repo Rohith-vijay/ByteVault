@@ -164,30 +164,6 @@ public class OrderController {
         return ResponseEntity.ok(ApiResponse.success("Order cancelled via refund path", response));
     }
 
-    /**
-     * Internal endpoint: moves order to FAILED on payment failure.
-     * Secured identically to mark-paid (X-Gateway-Secret + internal role).
-     */
-    @PostMapping("/internal/{id}/mark-failed")
-    public ResponseEntity<ApiResponse<OrderResponse>> markFailedInternal(
-            @PathVariable UUID id,
-            @RequestHeader(value = "X-Gateway-Secret", required = false) String gatewaySecretHeader,
-            @RequestHeader(value = "X-User-Roles", required = false) String userRolesHeader,
-            @RequestParam(value = "reason", required = false, defaultValue = "Payment failed") String reason,
-            Authentication authentication) {
-
-        if (!isInternalAuthorized(gatewaySecretHeader, userRolesHeader, authentication)) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                    .body(ApiResponse.error("Access Forbidden: Internal service authentication required.", 403));
-        }
-
-        log.info("[OrderController] Internal mark-failed for orderId={}, reason={}", id, reason);
-        OrderResponse response = orderService.markOrderFailed(id, reason);
-        return ResponseEntity.ok(ApiResponse.success("Order marked as FAILED", response));
-    }
-
-
-
     @PostMapping("/{id}/cancel")
     @PreAuthorize("hasRole('CUSTOMER') or hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<OrderResponse>> cancelOrder(
@@ -223,11 +199,6 @@ public class OrderController {
     }
 
     private boolean isInternalAuthorized(String gatewaySecretHeader, String userRolesHeader, Authentication auth) {
-        boolean hasInternalOrAdmin =
-                (userRolesHeader != null && (userRolesHeader.contains("ROLE_INTERNAL_SERVICE") || userRolesHeader.contains("ROLE_ADMIN")))
-                || (auth != null && auth.getAuthorities().stream().anyMatch(
-                        a -> a.getAuthority().equals("ROLE_INTERNAL_SERVICE") || a.getAuthority().equals("ROLE_ADMIN")));
-        boolean validSecret = gatewaySecretHeader != null && gatewaySecretHeader.equals(gatewaySecret);
-        return validSecret && hasInternalOrAdmin;
+        return gatewaySecretHeader != null && gatewaySecretHeader.equals(gatewaySecret);
     }
 }

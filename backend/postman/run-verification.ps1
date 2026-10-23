@@ -111,7 +111,8 @@ Write-Host "Order confirmation notification dispatched: $($notif.success)" -Fore
 # Test 11: Vendor Ledger Credit Verification (Priority 11 Regression Guard)
 Write-Host "`n[11/11] Verifying Vendor Ledger Credit (Priority 11)..." -ForegroundColor Yellow
 try {
-    $earnings = Invoke-RestMethod -Uri "$baseUrl/api/v1/payments/vendor/earnings" -Method Get -Headers @{ Authorization = "Bearer $vToken" }
+    $earningsRes = Invoke-RestMethod -Uri "$baseUrl/api/v1/payments/vendor/earnings" -Method Get -Headers @{ Authorization = "Bearer $vToken" }
+    $earnings = if ($earningsRes.data) { $earningsRes.data } else { $earningsRes }
     Write-Host "Vendor earnings queried successfully. Gross: $($earnings.grossEarnings), Net: $($earnings.netEarnings), Orders: $($earnings.totalOrdersCount)" -ForegroundColor Green
 } catch {
     Write-Host "Vendor earnings query executed with status: $_" -ForegroundColor Green

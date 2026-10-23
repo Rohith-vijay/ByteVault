@@ -37,11 +37,4 @@ public interface OrderClient {
             @PathVariable("id") UUID id,
             @RequestHeader(value = "X-Gateway-Secret", required = false) String gatewaySecret,
             @RequestHeader(value = "X-User-Roles", required = false) String userRoles);
-
-    @PostMapping("/api/v1/orders/internal/{id}/mark-failed")
-    ApiResponse<Map<String, Object>> markOrderFailed(
-            @PathVariable("id") UUID id,
-            @RequestHeader(value = "X-Gateway-Secret", required = false) String gatewaySecret,
-            @RequestHeader(value = "X-User-Roles", required = false) String userRoles,
-            @RequestParam(value = "reason", required = false) String reason);
 }

@@ -72,7 +72,9 @@ public class RefundService {
 
             isFullRefund = cumulativeRefund.compareTo(tx.getAmount()) == 0;
             tx.setStatus(isFullRefund ? "REFUNDED" : "PARTIALLY_REFUNDED");
-            transactionRepository.save(tx);
+            if (!isFullRefund) {
+                transactionRepository.save(tx);
+            }
         }
 
         Refund refund = Refund.builder()
@@ -99,8 +101,19 @@ public class RefundService {
             try {
                 orderClient.refundCancel(request.getOrderId(), gatewaySecret, "ROLE_INTERNAL_SERVICE");
                 log.info("[RefundService] Notified order-service of refund-cancel for fully refunded order: {}", request.getOrderId());
+                if (optTx.isPresent()) {
+                    PaymentTransaction tx = optTx.get();
+                    tx.setOrderSyncStatus("REFUND_SYNCED");
+                    transactionRepository.save(tx);
+                }
             } catch (Exception e) {
-                log.warn("[RefundService] Could not trigger refund-cancel on order-service via Feign: {}", e.getMessage());
+                log.error("[RefundService] CRITICAL: Could not trigger refund-cancel on order-service via Feign for orderId={}: {}. Scheduled reconciler will retry.",
+                        request.getOrderId(), e.getMessage());
+                if (optTx.isPresent()) {
+                    PaymentTransaction tx = optTx.get();
+                    tx.setOrderSyncStatus("REFUND_PENDING");
+                    transactionRepository.save(tx);
+                }
             }
         }
 

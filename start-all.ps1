@@ -31,7 +31,7 @@ function Start-ByteVaultService($svc) {
     $jarPath = "$backendDir\$($svc.Module)\target\$($svc.Module)-1.0.0-SNAPSHOT.jar"
     if (Test-Path $jarPath) {
         Write-Host ">>> Starting $($svc.Name) on port $($svc.Port) (JAR mode)..." -ForegroundColor Cyan
-        $argList = @("-Xms128m", "-Xmx384m", "-jar", $jarPath)
+        $argList = @("-Xms64m", "-Xmx320m", "-XX:+TieredCompilation", "-XX:TieredStopAtLevel=1", "-jar", $jarPath)
         $p = Start-Process -FilePath "java.exe" -ArgumentList $argList -WorkingDirectory $backendDir -PassThru -RedirectStandardOutput "$logsDir\$($svc.Name).log" -RedirectStandardError "$logsDir\$($svc.Name)-error.log"
         return $p
     } else {

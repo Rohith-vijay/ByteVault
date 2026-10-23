@@ -127,7 +127,8 @@ public class PaymentServiceTest {
                 .thenReturn(Optional.of(PaymentTransaction.builder().status("PENDING").build()));
 
         assertThrows(IllegalArgumentException.class, () -> paymentController.verifyPayment(request));
-        verify(orderClient, times(1)).markOrderFailed(eq(dbOrderId), any(), eq("ROLE_INTERNAL_SERVICE"), any());
+        verify(paymentOrderSyncService, never()).syncPaymentToOrder(any());
+        verify(transactionRepository, atLeastOnce()).save(any(PaymentTransaction.class));
     }
 
     @Test
@@ -152,8 +153,6 @@ public class PaymentServiceTest {
         assertNotNull(response.getBody());
         assertEquals("SUCCESS", response.getBody().get("status"));
         assertTrue(response.getBody().get("message").toString().contains("idempotent"));
-        // Ensure no failure call fired
-        verify(orderClient, never()).markOrderFailed(any(UUID.class), any(), any(), any());
     }
 
     @Test
