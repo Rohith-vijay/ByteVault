@@ -94,6 +94,9 @@ public class MinioStorageService implements StorageService {
 
         log.info("[MinioStorageService] Writing to local storage. Key: {}", finalKey);
         Path targetPath = Paths.get(fallbackDir, finalKey);
+        if (targetPath.getParent() != null) {
+            Files.createDirectories(targetPath.getParent());
+        }
         try (FileOutputStream fos = new FileOutputStream(targetPath.toFile())) {
             byte[] buffer = new byte[8192];
             int bytesRead;
