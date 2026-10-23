@@ -42,7 +42,7 @@ app:
     secret: ${GATEWAY_SECRET:platform_default_gateway_shared_secret}
   jwt:
     secret: ${JWT_SECRET:default_super_secure_jwt_secret_placeholder_minimum_32_chars_long}
-    expiration: ${JWT_EXPIRATION:28800000} # 8 hours
+    expiration: ${JWT_EXPIRATION:900000} # 15 minutes (short-lived stateless access token)
   frontend:
     url: ${FRONTEND_URL:http://localhost:5173}
 

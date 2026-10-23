@@ -18,7 +18,7 @@ public class JwtService {
     @Value("${app.jwt.secret:default_super_secure_jwt_secret_placeholder_minimum_32_chars_long}")
     private String secret;
 
-    @Value("${app.jwt.expiration:28800000}") // 8 hours default
+    @Value("${app.jwt.expiration:900000}") // 15 minutes default
     private long jwtExpiration;
 
     private Key getSignInKey() {

@@ -119,6 +119,13 @@ public class AuthController {
         return ResponseEntity.ok(auth);
     }
 
+    /**
+     * Stateless JWT Logout Semantics:
+     * 1. Access tokens are stateless, signed JWTs with a short 15-minute lifetime; they expire naturally.
+     * 2. The persistent RefreshToken is explicitly revoked in PostgreSQL, preventing issuance of new access tokens.
+     * 3. HttpOnly client cookies are cleared immediately.
+     * (No server-side memory blocklist claimed for stateless access tokens without active distributed cache).
+     */
     @PostMapping("/logout")
     public ResponseEntity<ApiResponse<Void>> logout(
             @RequestBody(required = false) RefreshTokenRequest request,
@@ -141,7 +148,7 @@ public class AuthController {
         String cookie = String.format(
             "access_token=%s; Max-Age=%d; Path=/api; HttpOnly; SameSite=Lax",
             token,
-            28800
+            900 // 15 minutes
         );
         response.addHeader("Set-Cookie", cookie);
     }
