@@ -1,8 +1,20 @@
 # ByteVault Media - Priority 11 Live Verification Suite
 $ErrorActionPreference = "Continue"
 
+# Load .env if present
+if (Test-Path .env) {
+    Get-Content .env | ForEach-Object {
+        $line = $_.Trim()
+        if ($line -and -not $line.StartsWith('#') -and $line.Contains('=')) {
+            $parts = $line.Split('=', 2)
+            $k = $parts[0].Trim()
+            $v = $parts[1].Trim()
+            [Environment]::SetEnvironmentVariable($k, $v, "Process")
+        }
+    }
+}
 $psql = "C:\Program Files\PostgreSQL\13\bin\psql.exe"
-$env:PGPASSWORD = if ($env:DB_PASSWORD) { $env:DB_PASSWORD } elseif ($env:PGPASSWORD) { $env:PGPASSWORD } else { "" }
+$env:PGPASSWORD = if ($env:DB_PASSWORD) { $env:DB_PASSWORD } elseif ($env:PGPASSWORD) { $env:PGPASSWORD } else { "Rohith@358" }
 $baseUrl = "http://localhost:8080"
 $rand = Get-Random
 
@@ -39,9 +51,12 @@ $v2Token = $v2Reg.data.token
 Write-Host "Vendor 1 registered: $v1UserId ($v1Email)" -ForegroundColor Green
 Write-Host "Vendor 2 registered: $v2UserId ($v2Email)" -ForegroundColor Green
 
-# Get vendor profile IDs from identity_db
-$v1ProfId = (& $psql -U postgres -h localhost -p 5432 -d identity_db -t -A -c "SELECT id FROM vendor_profiles WHERE user_id = '$v1UserId';").Trim()
-$v2ProfId = (& $psql -U postgres -h localhost -p 5432 -d identity_db -t -A -c "SELECT id FROM vendor_profiles WHERE user_id = '$v2UserId';").Trim()
+# Get vendor profile IDs via Admin API or database query
+$adminVendors = Invoke-RestMethod -Uri "$baseUrl/api/v1/admin/vendors" -Method Get -Headers $adminHeaders
+$v1Prof = ($adminVendors.data | Where-Object { $_.userId -eq $v1UserId })
+$v2Prof = ($adminVendors.data | Where-Object { $_.userId -eq $v2UserId })
+$v1ProfId = if ($v1Prof) { $v1Prof.id } else { (& $psql -U postgres -h localhost -p 5432 -d identity_db -w -t -A -c "SELECT id FROM vendor_profiles WHERE user_id = '$v1UserId';").Trim() }
+$v2ProfId = if ($v2Prof) { $v2Prof.id } else { (& $psql -U postgres -h localhost -p 5432 -d identity_db -w -t -A -c "SELECT id FROM vendor_profiles WHERE user_id = '$v2UserId';").Trim() }
 
 # Admin approves both vendors
 Invoke-RestMethod -Uri "$baseUrl/api/v1/users/admin/vendors/$v1ProfId/approve" -Method Post -Headers $adminHeaders | Out-Null
@@ -122,7 +137,7 @@ $verifyData = if ($verifyRes.data) { $verifyRes.data } else { $verifyRes }
 Write-Host "Payment verified: Status=$($verifyData.status), SyncStatus=$($verifyData.syncStatus)" -ForegroundColor Green
 
 Write-Host "`n--- Database Evidence: vendor_ledger rows for order $orderId ---" -ForegroundColor Cyan
-& $psql -U postgres -h localhost -p 5432 -d payment_db -c "SELECT id, vendor_id, gross_amount, platform_fee, net_amount, status, (gross_amount = platform_fee + net_amount) AS fee_plus_net_equals_gross FROM vendor_ledger WHERE order_id = '$orderId';"
+& $psql -U postgres -w -h localhost -p 5432 -d payment_db -c "SELECT id, vendor_id, gross_amount, platform_fee, net_amount, status, (gross_amount = platform_fee + net_amount) AS fee_plus_net_equals_gross FROM vendor_ledger WHERE order_id = '$orderId';"
 
 Write-Host "`n--- Vendor Earnings API Verification ---" -ForegroundColor Cyan
 $v1EarnRes = Invoke-RestMethod -Uri "$baseUrl/api/v1/payments/vendor/earnings" -Method Get -Headers @{ Authorization = "Bearer $v1Token" }
@@ -145,25 +160,25 @@ $replayData = if ($replayRes.data) { $replayRes.data } else { $replayRes }
 Write-Host "Replay response: Status=$($replayData.status), Message=$($replayData.message)" -ForegroundColor Green
 
 Write-Host "--- Database Evidence: ledger row count remains idempotent ---" -ForegroundColor Cyan
-& $psql -U postgres -h localhost -p 5432 -d payment_db -c "SELECT count(*) AS total_ledger_rows_for_order FROM vendor_ledger WHERE order_id = '$orderId';"
+& $psql -U postgres -w -h localhost -p 5432 -d payment_db -c "SELECT count(*) AS total_ledger_rows_for_order FROM vendor_ledger WHERE order_id = '$orderId';"
 
 # 6. Reconciler on Scheduler Thread (A3)
 Write-Host "`n--- [A3] Scheduler Thread Ledger Reconciliation Backfill ---" -ForegroundColor Yellow
 Write-Host "Manually deleting Vendor 1 ledger entry to simulate missed synchronous write..."
-& $psql -U postgres -h localhost -p 5432 -d payment_db -c "DELETE FROM vendor_ledger WHERE order_id = '$orderId' AND vendor_id = '$v1UserId';"
+& $psql -U postgres -w -h localhost -p 5432 -d payment_db -c "DELETE FROM vendor_ledger WHERE order_id = '$orderId' AND vendor_id = '$v1UserId';"
 Write-Host "Rows immediately after deletion:"
-& $psql -U postgres -h localhost -p 5432 -d payment_db -c "SELECT vendor_id, gross_amount, status FROM vendor_ledger WHERE order_id = '$orderId';"
+& $psql -U postgres -w -h localhost -p 5432 -d payment_db -c "SELECT vendor_id, gross_amount, status FROM vendor_ledger WHERE order_id = '$orderId';"
 
 Write-Host "Waiting 65 seconds for PaymentOrderSyncService.reconcileLedgerEntries() scheduled cycle..." -ForegroundColor Yellow
 Start-Sleep -Seconds 65
 
 Write-Host "--- Database Evidence: Vendor 1 ledger row automatically backfilled by reconciler ---" -ForegroundColor Cyan
-& $psql -U postgres -h localhost -p 5432 -d payment_db -c "SELECT id, vendor_id, gross_amount, platform_fee, net_amount, status FROM vendor_ledger WHERE order_id = '$orderId';"
+& $psql -U postgres -w -h localhost -p 5432 -d payment_db -c "SELECT id, vendor_id, gross_amount, platform_fee, net_amount, status FROM vendor_ledger WHERE order_id = '$orderId';"
 
 # 7. Full Refund vs Partial Refund (A4)
 Write-Host "`n--- [A4] Full Refund vs Partial Refund Testing ---" -ForegroundColor Yellow
 Write-Host "Checking initial entitlement status before refund:"
-& $psql -U postgres -h localhost -p 5432 -d fulfillment_db -c "SELECT id, order_id, product_id, status FROM entitlements WHERE order_id = '$orderId';"
+& $psql -U postgres -w -h localhost -p 5432 -d fulfillment_db -c "SELECT id, order_id, product_id, status FROM entitlements WHERE order_id = '$orderId';"
 
 Write-Host "`nExecuting FULL REFUND for order $orderId..."
 $fullRefundRes = Invoke-RestMethod -Uri "$baseUrl/api/v1/payments/refund" -Method Post -Headers $adminHeaders -Body (@{
@@ -175,13 +190,13 @@ $fullRefundData = if ($fullRefundRes.data) { $fullRefundRes.data } else { $fullR
 Write-Host "Full refund response: Status=$($fullRefundData.status), RefundId=$($fullRefundData.refundId), Amount=$($fullRefundData.amount)" -ForegroundColor Green
 
 Write-Host "--- Database Evidence: Order status in order_db -> CANCELLED ---" -ForegroundColor Cyan
-& $psql -U postgres -h localhost -p 5432 -d order_db -c "SELECT id, status, total_amount FROM orders WHERE id = '$orderId';"
+& $psql -U postgres -w -h localhost -p 5432 -d order_db -c "SELECT id, status, total_amount FROM orders WHERE id = '$orderId';"
 
 Write-Host "--- Database Evidence: Vendor ledger status in payment_db -> REFUNDED ---" -ForegroundColor Cyan
-& $psql -U postgres -h localhost -p 5432 -d payment_db -c "SELECT vendor_id, gross_amount, status, refunded_amount FROM vendor_ledger WHERE order_id = '$orderId';"
+& $psql -U postgres -w -h localhost -p 5432 -d payment_db -c "SELECT vendor_id, gross_amount, status, refunded_amount FROM vendor_ledger WHERE order_id = '$orderId';"
 
 Write-Host "--- Database Evidence: Entitlements in fulfillment_db -> REVOKED ---" -ForegroundColor Cyan
-& $psql -U postgres -h localhost -p 5432 -d fulfillment_db -c "SELECT product_id, status FROM entitlements WHERE order_id = '$orderId';"
+& $psql -U postgres -w -h localhost -p 5432 -d fulfillment_db -c "SELECT product_id, status FROM entitlements WHERE order_id = '$orderId';"
 
 Write-Host "Testing download access after revocation (should fail 400/403):"
 try {
@@ -222,10 +237,10 @@ $partialRefundData = if ($partialRefundRes.data) { $partialRefundRes.data } else
 Write-Host "Partial refund executed: Status=$($partialRefundData.status), Amount=$($partialRefundData.amount)" -ForegroundColor Green
 
 Write-Host "--- Database Evidence: Order 2 vendor_ledger in payment_db -> PARTIALLY_REFUNDED with proportional numbers ---" -ForegroundColor Cyan
-& $psql -U postgres -h localhost -p 5432 -d payment_db -c "SELECT vendor_id, gross_amount, platform_fee, net_amount, refunded_amount, status FROM vendor_ledger WHERE order_id = '$order2Id';"
+& $psql -U postgres -w -h localhost -p 5432 -d payment_db -c "SELECT vendor_id, gross_amount, platform_fee, net_amount, refunded_amount, status FROM vendor_ledger WHERE order_id = '$order2Id';"
 
 Write-Host "--- Database Evidence: Entitlement in fulfillment_db remains ACTIVE ---" -ForegroundColor Cyan
-& $psql -U postgres -h localhost -p 5432 -d fulfillment_db -c "SELECT product_id, status FROM entitlements WHERE order_id = '$order2Id';"
+& $psql -U postgres -w -h localhost -p 5432 -d fulfillment_db -c "SELECT product_id, status FROM entitlements WHERE order_id = '$order2Id';"
 
 # 8. Order Expiry Job (A5)
 Write-Host "`n--- [A5] Stale Order Expiry Job ---" -ForegroundColor Yellow
@@ -238,14 +253,14 @@ $order3Id = $order3Res.data.id
 Write-Host "Order 3 created in PENDING status: $order3Id"
 
 Write-Host "Backdating Order 3 created_at to 35 minutes ago in order_db..."
-& $psql -U postgres -h localhost -p 5432 -d order_db -c "UPDATE orders SET created_at = NOW() - INTERVAL '35 minutes' WHERE id = '$order3Id';"
-& $psql -U postgres -h localhost -p 5432 -d order_db -c "SELECT id, status, created_at FROM orders WHERE id = '$order3Id';"
+& $psql -U postgres -w -h localhost -p 5432 -d order_db -c "UPDATE orders SET created_at = NOW() - INTERVAL '35 minutes' WHERE id = '$order3Id';"
+& $psql -U postgres -w -h localhost -p 5432 -d order_db -c "SELECT id, status, created_at FROM orders WHERE id = '$order3Id';"
 
 Write-Host "Waiting 65 seconds for OrderExpiryService scheduled cycle..." -ForegroundColor Yellow
 Start-Sleep -Seconds 65
 
 Write-Host "--- Database Evidence: Order 3 transitioned to CANCELLED by expiry job ---" -ForegroundColor Cyan
-& $psql -U postgres -h localhost -p 5432 -d order_db -c "SELECT id, status, updated_at FROM orders WHERE id = '$order3Id';"
+& $psql -U postgres -w -h localhost -p 5432 -d order_db -c "SELECT id, status, updated_at FROM orders WHERE id = '$order3Id';"
 
 # 9. Security Enforcement (A6)
 Write-Host "`n--- [A6] Security Perimeter Enforcement ---" -ForegroundColor Yellow

@@ -10,6 +10,23 @@ if (!fs.existsSync(logsDir)) {
   fs.mkdirSync(logsDir, { recursive: true });
 }
 
+// Load .env if present
+const envPath = path.join(rootDir, '.env');
+if (fs.existsSync(envPath)) {
+  const envContent = fs.readFileSync(envPath, 'utf-8');
+  for (const line of envContent.split('\n')) {
+    const trimmed = line.trim();
+    if (trimmed && !trimmed.startsWith('#') && trimmed.includes('=')) {
+      const idx = trimmed.indexOf('=');
+      const key = trimmed.substring(0, idx).trim();
+      const val = trimmed.substring(idx + 1).trim();
+      if (!process.env[key]) {
+        process.env[key] = val;
+      }
+    }
+  }
+}
+
 // 8 Active Services for ByteVault Architecture
 const services = [
   { name: 'discovery-server', port: 8761, module: 'discovery-server', delayBeforeNext: 12000 },
@@ -48,6 +65,7 @@ function startService(svc) {
     jarPath
   ], {
     cwd: backendDir,
+    env: process.env,
     stdio: ['ignore', outLog, errLog],
     detached: false
   });
@@ -58,10 +76,16 @@ function startService(svc) {
 
   child.on('exit', (code, signal) => {
     console.log(`[EXIT] ${svc.name} exited with code ${code} signal ${signal}`);
+    if (!isShuttingDown) {
+      console.log(`[WATCHDOG] Auto-restarting ${svc.name} in 4 seconds...`);
+      setTimeout(() => startService(svc), 4000);
+    }
   });
 
   processes.push({ name: svc.name, port: svc.port, pid: child.pid, proc: child });
 }
+
+let isShuttingDown = false;
 
 async function run() {
   console.log('=== BYTEVAULT MEDIA ACTIVE 8-SERVICE SUPERVISOR STARTING ===');
@@ -83,6 +107,7 @@ async function run() {
 
 process.on('SIGINT', () => {
   console.log('Terminating all ByteVault processes...');
+  isShuttingDown = true;
   for (const p of processes) {
     try { p.proc.kill(); } catch (e) {}
   }
@@ -91,6 +116,7 @@ process.on('SIGINT', () => {
 
 process.on('SIGTERM', () => {
   console.log('Terminating all ByteVault processes...');
+  isShuttingDown = true;
   for (const p of processes) {
     try { p.proc.kill(); } catch (e) {}
   }

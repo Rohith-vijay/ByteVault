@@ -7,22 +7,34 @@ Write-Host "=================================================================" -
 
 $baseUrl = "http://localhost:8080"
 $rand = Get-Random
+# Load .env if present
+if (Test-Path .env) {
+    Get-Content .env | ForEach-Object {
+        $line = $_.Trim()
+        if ($line -and -not $line.StartsWith('#') -and $line.Contains('=')) {
+            $parts = $line.Split('=', 2)
+            $k = $parts[0].Trim()
+            $v = $parts[1].Trim()
+            [Environment]::SetEnvironmentVariable($k, $v, "Process")
+        }
+    }
+}
 $psql = "C:\Program Files\PostgreSQL\13\bin\psql.exe"
-$env:PGPASSWORD = if ($env:DB_PASSWORD) { $env:DB_PASSWORD } elseif ($env:PGPASSWORD) { $env:PGPASSWORD } else { "" }
+$env:PGPASSWORD = if ($env:DB_PASSWORD) { $env:DB_PASSWORD } elseif ($env:PGPASSWORD) { $env:PGPASSWORD } else { "Rohith@358" }
 
 # Step 1: Find and kill Fulfillment Service (Port 8088)
 Write-Host "`n[Step 1] Stopping Fulfillment Service (Port 8088)..." -ForegroundColor Yellow
-$conn = Get-NetTCPConnection -LocalPort 8088 -ErrorAction SilentlyContinue | Select-Object -First 1
+$conn = Get-NetTCPConnection -LocalPort 8088 -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
 if ($conn) {
     Stop-Process -Id $conn.OwningProcess -Force
     Write-Host "Killed Fulfillment Service PID $($conn.OwningProcess) on port 8088." -ForegroundColor Green
+    Start-Sleep -Seconds 5
 } else {
     Write-Host "Fulfillment Service is not currently running on 8088." -ForegroundColor Yellow
 }
-Start-Sleep -Seconds 3
 
 # Verify Port 8088 is dead
-$connCheck = Get-NetTCPConnection -LocalPort 8088 -ErrorAction SilentlyContinue
+$connCheck = Get-NetTCPConnection -LocalPort 8088 -State Listen -ErrorAction SilentlyContinue
 if ($connCheck) {
     Write-Error "Failed to stop Fulfillment Service on port 8088!"
     exit 1
@@ -42,14 +54,16 @@ $token = $regRes.data.token
 $userId = $regRes.data.userId
 $authHeaders = @{ Authorization = "Bearer $token"; "Content-Type" = "application/json" }
 
-$prodId = "bcea9a84-25ce-4e46-a195-db7193a5ffb4"
+$catRes = Invoke-RestMethod -Uri "$baseUrl/api/v1/products" -Method Get
+$digitalProd = ($catRes.data | Where-Object { $_.productType -eq "DIGITAL" })[0]
+$prodId = if ($digitalProd) { $digitalProd.id } else { "bcea9a84-25ce-4e46-a195-db7193a5ffb4" }
 $orderRes = Invoke-RestMethod -Uri "$baseUrl/api/v1/orders" -Method Post -Headers $authHeaders -Body (@{
-    items = @(@{ productId = $prodId; quantity = 1 })
+    items = ,@{ productId = $prodId; quantity = 1 }
     customerName = "Outbox Verifier"
     customerEmail = "outbox_test_$rand@bytevault.com"
 } | ConvertTo-Json)
 
-$orderId = $orderRes.data.id
+$orderId = if ($orderRes.data) { $orderRes.data.id } else { $orderRes.id }
 Write-Host "Order created: $orderId (Status: $($orderRes.data.status))" -ForegroundColor Green
 
 # Step 3: Trigger payment capture (mark-paid) while Fulfillment is DOWN
@@ -72,14 +86,13 @@ Write-Host "Mark-paid returned status: $($paidRes.data.status)" -ForegroundColor
 # Step 4: Verify Database State while Fulfillment is DOWN
 Write-Host "`n[Step 4] Checking PostgreSQL order_db outbox_events table..." -ForegroundColor Yellow
 $outboxQuery = "SELECT id, status, retry_count, substring(last_error, 1, 50) as error_snippet FROM outbox_events WHERE aggregate_id = '$orderId';"
-$outboxResult = & $psql -U postgres -h localhost -d order_db -c "$outboxQuery"
+$outboxResult = & $psql -U postgres -w -h localhost -d order_db -c "$outboxQuery"
 Write-Host "$outboxResult"
 
 # Step 5: Restart Fulfillment Service on Port 8088
 Write-Host "`n[Step 5] Restarting Fulfillment Service on port 8088..." -ForegroundColor Yellow
-$jarPath = "D:\ProductManagementSystem\backend\fulfillment-service\target\fulfillment-service-1.0.0-SNAPSHOT.jar"
-$fProc = Start-Process -FilePath "java.exe" -ArgumentList @("-Xms128m", "-Xmx384m", "-jar", $jarPath) -WorkingDirectory "D:\ProductManagementSystem\backend" -PassThru
-Write-Host "Fulfillment Service started with PID $($fProc.Id). Waiting 15 seconds for startup..." -ForegroundColor Cyan
+node tools/start-fulfillment.js
+Write-Host "Fulfillment Service started. Waiting 15 seconds for startup and Eureka registration..." -ForegroundColor Cyan
 Start-Sleep -Seconds 15
 
 # Step 6: Wait for OutboxPublisherService to retry and complete
@@ -87,12 +100,12 @@ Write-Host "`n[Step 6] Waiting for OutboxPublisherService scheduled retry (runs 
 Start-Sleep -Seconds 5
 
 Write-Host "`n[Step 7] Checking PostgreSQL order_db outbox_events table AFTER RECOVERY..." -ForegroundColor Yellow
-$outboxRecovered = & $psql -U postgres -h localhost -d order_db -c "SELECT id, status, retry_count, published_at FROM outbox_events WHERE aggregate_id = '$orderId';"
+$outboxRecovered = & $psql -U postgres -w -h localhost -d order_db -c "SELECT id, status, retry_count, published_at FROM outbox_events WHERE aggregate_id = '$orderId';"
 Write-Host "$outboxRecovered"
 
 Write-Host "`n[Step 8] Verifying Entitlement was granted in fulfillment_db..." -ForegroundColor Yellow
-$entQuery = "SELECT id, order_id, product_id, license_key, is_revoked FROM entitlements WHERE order_id = '$orderId';"
-$entResult = & $psql -U postgres -h localhost -d fulfillment_db -c "$entQuery"
+$entQuery = "SELECT id, order_id, product_id, status FROM entitlements WHERE order_id = '$orderId';"
+$entResult = & $psql -U postgres -w -h localhost -d fulfillment_db -c "$entQuery"
 Write-Host "$entResult"
 
 Write-Host "`n=================================================================" -ForegroundColor Green

@@ -48,6 +48,7 @@ docker/db_data/
 .runners/
 .bytevault-pids.json
 backend/temp-assets/
+temp-assets/
 node_modules/
 dist/
 
