@@ -156,12 +156,62 @@ public class PaymentServiceTest {
     }
 
     @Test
-    @DisplayName("Razorpay webhook callback handles event and acknowledges")
-    void testRazorpayWebhook() {
+    @DisplayName("Razorpay webhook callback handles event when webhook secret is unconfigured (inert/dev mode)")
+    void testRazorpayWebhook_NoSecret_Inert() {
+        org.springframework.test.util.ReflectionTestUtils.setField(paymentController, "webhookSecret", "");
         String payload = "{\"event\":\"payment.captured\",\"payload\":{\"payment\":{\"entity\":{\"id\":\"pay_123\"}}}}";
-        ResponseEntity<Map<String, Object>> response = paymentController.handleRazorpayWebhook("valid_sig", payload);
+        ResponseEntity<Map<String, Object>> response = paymentController.handleRazorpayWebhook(null, payload);
 
         assertNotNull(response.getBody());
+        assertEquals("PROCESSED", response.getBody().get("status"));
+    }
+
+    @Test
+    @DisplayName("Razorpay webhook rejects request when secret configured and signature is missing (400 Bad Request)")
+    void testRazorpayWebhook_MissingSignature_Rejected() {
+        org.springframework.test.util.ReflectionTestUtils.setField(paymentController, "webhookSecret", "whsec_test_secret_12345");
+        String payload = "{\"event\":\"payment.captured\",\"payload\":{\"payment\":{\"entity\":{\"id\":\"pay_123\"}}}}";
+        ResponseEntity<Map<String, Object>> response = paymentController.handleRazorpayWebhook(null, payload);
+
+        assertNotNull(response.getBody());
+        assertEquals(org.springframework.http.HttpStatus.BAD_REQUEST, response.getStatusCode());
+        assertEquals("REJECTED", response.getBody().get("status"));
+    }
+
+    @Test
+    @DisplayName("Razorpay webhook rejects request when secret configured and signature is invalid (400 Bad Request)")
+    void testRazorpayWebhook_InvalidSignature_Rejected() {
+        org.springframework.test.util.ReflectionTestUtils.setField(paymentController, "webhookSecret", "whsec_test_secret_12345");
+        String payload = "{\"event\":\"payment.captured\",\"payload\":{\"payment\":{\"entity\":{\"id\":\"pay_123\"}}}}";
+        ResponseEntity<Map<String, Object>> response = paymentController.handleRazorpayWebhook("invalid_forged_signature_hex", payload);
+
+        assertNotNull(response.getBody());
+        assertEquals(org.springframework.http.HttpStatus.BAD_REQUEST, response.getStatusCode());
+        assertEquals("REJECTED", response.getBody().get("status"));
+    }
+
+    @Test
+    @DisplayName("Razorpay webhook accepts and processes event with valid HMAC-SHA256 signature (200 OK)")
+    void testRazorpayWebhook_ValidSignature_Accepted() throws Exception {
+        String secret = "whsec_test_secret_12345";
+        org.springframework.test.util.ReflectionTestUtils.setField(paymentController, "webhookSecret", secret);
+        String payload = "{\"event\":\"payment.captured\",\"payload\":{\"payment\":{\"entity\":{\"id\":\"pay_123\"}}}}";
+
+        javax.crypto.Mac mac = javax.crypto.Mac.getInstance("HmacSHA256");
+        mac.init(new javax.crypto.spec.SecretKeySpec(secret.getBytes(java.nio.charset.StandardCharsets.UTF_8), "HmacSHA256"));
+        byte[] hash = mac.doFinal(payload.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        StringBuilder sb = new StringBuilder();
+        for (byte b : hash) {
+            String hex = Integer.toHexString(0xff & b);
+            if (hex.length() == 1) sb.append('0');
+            sb.append(hex);
+        }
+        String validSignature = sb.toString();
+
+        ResponseEntity<Map<String, Object>> response = paymentController.handleRazorpayWebhook(validSignature, payload);
+
+        assertNotNull(response.getBody());
+        assertEquals(org.springframework.http.HttpStatus.OK, response.getStatusCode());
         assertEquals("PROCESSED", response.getBody().get("status"));
     }
 

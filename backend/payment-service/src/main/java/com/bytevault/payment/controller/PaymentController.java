@@ -34,6 +34,9 @@ public class PaymentController {
     @Value("${app.gateway.secret:platform_default_gateway_shared_secret}")
     private String gatewaySecret;
 
+    @Value("${razorpay.webhook-secret:}")
+    private String webhookSecret;
+
     @GetMapping("/vendor/earnings")
     public ResponseEntity<com.bytevault.payment.dto.VendorEarningsResponse> getVendorEarnings(
             @RequestParam(value = "vendorId", required = false) UUID requestedVendorId,
@@ -285,6 +288,43 @@ public class PaymentController {
             @RequestBody String rawPayload) {
         log.info("[PaymentController] Received Razorpay Webhook callback. Signature present: {}", webhookSignature != null);
         Map<String, Object> response = new HashMap<>();
+
+        // Fix F1: Verify HMAC-SHA256 signature if webhookSecret is configured
+        if (webhookSecret != null && !webhookSecret.trim().isEmpty()) {
+            if (webhookSignature == null || webhookSignature.trim().isEmpty()) {
+                log.warn("[PaymentController] Webhook rejected: missing X-Razorpay-Signature header");
+                response.put("status", "REJECTED");
+                response.put("message", "Missing required X-Razorpay-Signature header");
+                return ResponseEntity.status(org.springframework.http.HttpStatus.BAD_REQUEST).body(response);
+            }
+
+            try {
+                javax.crypto.Mac mac = javax.crypto.Mac.getInstance("HmacSHA256");
+                mac.init(new javax.crypto.spec.SecretKeySpec(webhookSecret.trim().getBytes(java.nio.charset.StandardCharsets.UTF_8), "HmacSHA256"));
+                byte[] hash = mac.doFinal(rawPayload != null ? rawPayload.getBytes(java.nio.charset.StandardCharsets.UTF_8) : new byte[0]);
+                StringBuilder sb = new StringBuilder();
+                for (byte b : hash) {
+                    String hex = Integer.toHexString(0xff & b);
+                    if (hex.length() == 1) sb.append('0');
+                    sb.append(hex);
+                }
+                String expectedSig = sb.toString();
+
+                if (!java.security.MessageDigest.isEqual(
+                        expectedSig.getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                        webhookSignature.trim().getBytes(java.nio.charset.StandardCharsets.UTF_8))) {
+                    log.warn("[PaymentController] Webhook rejected: signature mismatch");
+                    response.put("status", "REJECTED");
+                    response.put("message", "Invalid webhook signature");
+                    return ResponseEntity.status(org.springframework.http.HttpStatus.BAD_REQUEST).body(response);
+                }
+            } catch (Exception ex) {
+                log.error("[PaymentController] Error computing webhook signature: {}", ex.getMessage());
+                response.put("status", "REJECTED");
+                response.put("message", "Signature verification error");
+                return ResponseEntity.status(org.springframework.http.HttpStatus.BAD_REQUEST).body(response);
+            }
+        }
 
         try {
             com.fasterxml.jackson.databind.JsonNode root = new com.fasterxml.jackson.databind.ObjectMapper().readTree(rawPayload);
