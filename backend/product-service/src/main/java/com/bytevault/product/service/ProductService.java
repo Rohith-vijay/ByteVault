@@ -428,6 +428,10 @@ public class ProductService {
         return storageService.downloadFile(key);
     }
 
+    public boolean validateSignedUrl(String key, Long expires, String signature) {
+        return storageService.validateSignedUrl(key, expires, signature);
+    }
+
     // --- HELPER & VALIDATION METHODS ---
 
     private void validateProductCreation(CreateProductRequest request) {

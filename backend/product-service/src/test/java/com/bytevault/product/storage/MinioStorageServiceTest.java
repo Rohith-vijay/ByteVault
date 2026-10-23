@@ -40,4 +40,67 @@ public class MinioStorageServiceTest {
             downloaded.getInputStream().close();
         }
     }
+
+    @Test
+    @DisplayName("Local Fallback: generatePresignedUrl produces signed URL with key, expires, and signature")
+    void testGeneratePresignedUrl_LocalFallback_ContainsExpiresAndSignature() throws Exception {
+        MinioStorageService storageService = new MinioStorageService();
+        ReflectionTestUtils.setField(storageService, "isMinioEnabled", false);
+        ReflectionTestUtils.setField(storageService, "signingSecret", "test-signing-secret-key-12345");
+
+        String key = "assets/item123/file.pdf";
+        String url = storageService.generatePresignedUrl(key, 15);
+
+        assertNotNull(url);
+        assertTrue(url.contains("key=" + key));
+        assertTrue(url.contains("expires="));
+        assertTrue(url.contains("signature="));
+    }
+
+    @Test
+    @DisplayName("Local Fallback: validateSignedUrl succeeds with valid signature and unexpired timestamp")
+    void testValidateSignedUrl_Valid_ReturnsTrue() throws Exception {
+        MinioStorageService storageService = new MinioStorageService();
+        ReflectionTestUtils.setField(storageService, "isMinioEnabled", false);
+        ReflectionTestUtils.setField(storageService, "signingSecret", "test-signing-secret-key-12345");
+
+        String key = "assets/item123/file.pdf";
+        long futureExpiry = System.currentTimeMillis() + 600000; // 10 minutes ahead
+
+        javax.crypto.Mac mac = javax.crypto.Mac.getInstance("HmacSHA256");
+        mac.init(new javax.crypto.spec.SecretKeySpec("test-signing-secret-key-12345".getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+        byte[] hash = mac.doFinal((key + ":" + futureExpiry).getBytes(StandardCharsets.UTF_8));
+        StringBuilder sb = new StringBuilder();
+        for (byte b : hash) {
+            String hex = Integer.toHexString(0xff & b);
+            if (hex.length() == 1) sb.append('0');
+            sb.append(hex);
+        }
+        String validSig = sb.toString();
+
+        assertTrue(storageService.validateSignedUrl(key, futureExpiry, validSig));
+    }
+
+    @Test
+    @DisplayName("Local Fallback: validateSignedUrl rejects tampered signature or expired timestamp")
+    void testValidateSignedUrl_RejectsInvalidOrExpired() throws Exception {
+        MinioStorageService storageService = new MinioStorageService();
+        ReflectionTestUtils.setField(storageService, "isMinioEnabled", false);
+        ReflectionTestUtils.setField(storageService, "signingSecret", "test-signing-secret-key-12345");
+
+        String key = "assets/item123/file.pdf";
+        long futureExpiry = System.currentTimeMillis() + 600000;
+        long pastExpiry = System.currentTimeMillis() - 1000;
+
+        // Tampered signature
+        assertFalse(storageService.validateSignedUrl(key, futureExpiry, "forged_signature_123456789"));
+
+        // Missing signature or expiry
+        assertFalse(storageService.validateSignedUrl(key, null, "sig"));
+        assertFalse(storageService.validateSignedUrl(key, futureExpiry, null));
+        assertFalse(storageService.validateSignedUrl(null, futureExpiry, "sig"));
+
+        // Expired timestamp
+        assertFalse(storageService.validateSignedUrl(key, pastExpiry, "valid_or_invalid"));
+    }
 }

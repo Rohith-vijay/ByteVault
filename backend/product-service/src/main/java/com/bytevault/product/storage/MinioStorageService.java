@@ -36,6 +36,9 @@ public class MinioStorageService implements StorageService {
     @Value("${app.storage.local-fallback-dir:temp-assets}")
     private String fallbackDir;
 
+    @Value("${app.storage.signing-secret:${jwt.secret:ByteVaultSecureAssetSigningDefaultSecretKey1234567890}}")
+    private String signingSecret;
+
     private MinioClient minioClient;
     private boolean isMinioEnabled = false;
 
@@ -170,7 +173,49 @@ public class MinioStorageService implements StorageService {
 
         // Standard signed download link fallback via API Gateway
         log.info("[MinioStorageService] Generating signed URL for key: {}", key);
-        return "http://localhost:8080/api/v1/products/assets/download?key=" + key + "&token=sig_" + UUID.nameUUIDFromBytes((key + expiry).getBytes()) + "&expiry=" + expiry + "m";
+        long expiresAt = System.currentTimeMillis() + ((long) expiry * 60 * 1000);
+        String signature = computeHmacSha256(key + ":" + expiresAt, signingSecret);
+        return "http://localhost:8080/api/v1/products/assets/download?key=" + key + "&expires=" + expiresAt + "&signature=" + signature;
+    }
+
+    @Override
+    public boolean validateSignedUrl(String key, Long expires, String signature) {
+        if (key == null || expires == null || signature == null || signature.trim().isEmpty()) {
+            return false;
+        }
+        if (System.currentTimeMillis() > expires) {
+            log.warn("[MinioStorageService] Download link expired for key: {}. Expiry: {}, Now: {}", key, expires, System.currentTimeMillis());
+            return false;
+        }
+        String expectedSig = computeHmacSha256(key + ":" + expires, signingSecret);
+        if (expectedSig == null) {
+            return false;
+        }
+        return java.security.MessageDigest.isEqual(
+                expectedSig.getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                signature.trim().getBytes(java.nio.charset.StandardCharsets.UTF_8)
+        );
+    }
+
+    private String computeHmacSha256(String data, String secret) {
+        if (secret == null || secret.isEmpty()) {
+            secret = "ByteVaultSecureAssetSigningDefaultSecretKey1234567890";
+        }
+        try {
+            javax.crypto.Mac mac = javax.crypto.Mac.getInstance("HmacSHA256");
+            mac.init(new javax.crypto.spec.SecretKeySpec(secret.getBytes(java.nio.charset.StandardCharsets.UTF_8), "HmacSHA256"));
+            byte[] hash = mac.doFinal(data.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder();
+            for (byte b : hash) {
+                String hex = Integer.toHexString(0xff & b);
+                if (hex.length() == 1) sb.append('0');
+                sb.append(hex);
+            }
+            return sb.toString();
+        } catch (Exception e) {
+            log.error("[MinioStorageService] Error computing HMAC-SHA256: {}", e.getMessage());
+            return null;
+        }
     }
 
     @Override

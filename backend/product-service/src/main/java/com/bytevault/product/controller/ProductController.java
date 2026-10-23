@@ -36,7 +36,16 @@ public class ProductController {
     @GetMapping("/assets/download")
     public ResponseEntity<org.springframework.core.io.Resource> downloadAsset(
             @RequestParam("key") String key,
+            @RequestParam(value = "expires", required = false) Long expires,
+            @RequestParam(value = "signature", required = false) String signature,
             @RequestParam(value = "token", required = false) String token) throws Exception {
+        String effectiveSignature = (signature != null && !signature.trim().isEmpty()) ? signature.trim() : token;
+
+        // Fix F2: Validate HMAC-SHA256 signature and expiry timestamp
+        if (!productService.validateSignedUrl(key, expires, effectiveSignature)) {
+            return ResponseEntity.status(org.springframework.http.HttpStatus.FORBIDDEN).build();
+        }
+
         com.bytevault.product.storage.StorageObject obj = productService.downloadAsset(key);
         org.springframework.core.io.InputStreamResource resource = new org.springframework.core.io.InputStreamResource(obj.getInputStream());
         return ResponseEntity.ok()
