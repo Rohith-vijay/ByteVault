@@ -32,6 +32,8 @@ eureka:
 app:
   gateway:
     secret: ${GATEWAY_SECRET:platform_default_gateway_shared_secret}
+  physical-products:
+    enabled: ${PHYSICAL_PRODUCTS_ENABLED:false}
   storage:
     minio:
       endpoint: ${MINIO_ENDPOINT:}

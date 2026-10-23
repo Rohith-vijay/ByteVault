@@ -14,6 +14,7 @@ import com.bytevault.product.repository.ProductRepository;
 import com.bytevault.product.storage.StorageService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -33,6 +34,9 @@ public class ProductService {
     private final CategoryRepository categoryRepository;
     private final StorageService storageService;
     private final com.bytevault.product.security.VendorAuthorizationService vendorAuthorizationService;
+
+    @Value("${app.physical-products.enabled:false}")
+    private boolean physicalProductsEnabled;
 
     // --- VENDOR OPERATIONS (Approved Vendors Only) ---
 
@@ -446,6 +450,9 @@ public class ProductService {
         }
 
         if (request.getProductType() == ProductType.PHYSICAL) {
+            if (!physicalProductsEnabled) {
+                throw new BadRequestException("Physical products are not supported in this release. ByteVault Media is currently configured for digital assets only.");
+            }
             String sku = resolveSku(request);
             if (sku == null || sku.trim().isEmpty()) {
                 throw new BadRequestException("SKU is required for physical products.");

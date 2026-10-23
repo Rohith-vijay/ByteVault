@@ -113,6 +113,7 @@ public class ProductLifecycleAndOwnershipTest {
                 .sku("BV-SEC-001")
                 .build();
 
+        org.springframework.test.util.ReflectionTestUtils.setField(productService, "physicalProductsEnabled", true);
         ProductResponse res = productService.createVendorProduct(vendorA, req, true);
 
         assertNotNull(res);
@@ -340,6 +341,7 @@ public class ProductLifecycleAndOwnershipTest {
                 .productType(ProductType.PHYSICAL)
                 .build();
 
+        org.springframework.test.util.ReflectionTestUtils.setField(productService, "physicalProductsEnabled", true);
         assertThrows(BadRequestException.class, () ->
                 productService.createVendorProduct(vendorA, req, true));
     }
@@ -356,6 +358,7 @@ public class ProductLifecycleAndOwnershipTest {
                 .sku("BV-DUP-01")
                 .build();
 
+        org.springframework.test.util.ReflectionTestUtils.setField(productService, "physicalProductsEnabled", true);
         assertThrows(BadRequestException.class, () ->
                 productService.createVendorProduct(vendorA, req, true));
     }

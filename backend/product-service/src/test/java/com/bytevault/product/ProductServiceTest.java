@@ -227,6 +227,8 @@ public class ProductServiceTest {
                 .physicalDimensions("30x20x2 cm")
                 .build();
 
+        org.springframework.test.util.ReflectionTestUtils.setField(productService, "physicalProductsEnabled", true);
+
         ProductResponse response = productService.createProduct(request);
 
         assertNotNull(response);
@@ -234,6 +236,24 @@ public class ProductServiceTest {
         assertEquals(ProductType.PHYSICAL, response.getProductType());
         assertEquals("BV-TSHIRT-BLK-L", response.getPhysicalSku());
         assertEquals(ProductStatus.PUBLISHED, response.getStatus());
+    }
+
+    @Test
+    @DisplayName("Create product physical type rejected when physicalProductsEnabled is false")
+    void testCreateProduct_Physical_DisabledByDefault_ThrowsBadRequestException() {
+        CreateProductRequest request = CreateProductRequest.builder()
+                .name("ByteVault T-Shirt")
+                .description("100% Organic Cotton")
+                .price(BigDecimal.valueOf(799.00))
+                .productType(ProductType.PHYSICAL)
+                .physicalSku("BV-TSHIRT-BLK-L")
+                .build();
+
+        org.springframework.test.util.ReflectionTestUtils.setField(productService, "physicalProductsEnabled", false);
+
+        BadRequestException ex = assertThrows(BadRequestException.class,
+                () -> productService.createProduct(request));
+        assertTrue(ex.getMessage().contains("Physical products are not supported"));
     }
 
     @Test

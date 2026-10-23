@@ -237,6 +237,8 @@ public class OrderServiceTest {
             return order;
         });
 
+        org.springframework.test.util.ReflectionTestUtils.setField(orderService, "physicalProductsEnabled", true);
+
         CreateOrderRequest request = CreateOrderRequest.builder()
                 .items(List.of(OrderItemRequest.builder()
                         .productId(physicalProductId)
@@ -271,6 +273,8 @@ public class OrderServiceTest {
         when(inventoryClient.reserveStock(eq(physicalProductId), eq(1), any()))
                 .thenReturn(com.bytevault.common.api.ApiResponse.error("Insufficient stock", 400));
 
+        org.springframework.test.util.ReflectionTestUtils.setField(orderService, "physicalProductsEnabled", true);
+
         CreateOrderRequest request = CreateOrderRequest.builder()
                 .items(List.of(OrderItemRequest.builder()
                         .productId(physicalProductId)
@@ -283,6 +287,39 @@ public class OrderServiceTest {
                 orderService.createOrder(userId, "buyer@bytevault.com", "John Doe", request));
 
         assertTrue(ex.getMessage().contains("Insufficient inventory"));
+        verify(orderRepository, never()).save(any(Order.class));
+    }
+
+    @Test
+    @DisplayName("Physical product order creation rejected when physicalProductsEnabled is false")
+    void testCreatePhysicalOrder_DisabledByDefault_ThrowsBadRequestException() {
+        UUID userId = UUID.randomUUID();
+        UUID physicalProductId = UUID.randomUUID();
+
+        ProductSummaryResponse physicalProduct = ProductSummaryResponse.builder()
+                .id(physicalProductId)
+                .name("ByteVault Hardcover Book")
+                .price(BigDecimal.valueOf(899.00))
+                .productType("PHYSICAL")
+                .status("ACTIVE")
+                .build();
+
+        when(productClient.getProductById(physicalProductId)).thenReturn(physicalProduct);
+
+        org.springframework.test.util.ReflectionTestUtils.setField(orderService, "physicalProductsEnabled", false);
+
+        CreateOrderRequest request = CreateOrderRequest.builder()
+                .items(List.of(OrderItemRequest.builder()
+                        .productId(physicalProductId)
+                        .quantity(1)
+                        .build()))
+                .shippingAddress("123 Tech Park, Silicon Valley, CA")
+                .build();
+
+        BadRequestException ex = assertThrows(BadRequestException.class, () ->
+                orderService.createOrder(userId, "buyer@bytevault.com", "John Doe", request));
+
+        assertTrue(ex.getMessage().contains("Physical product orders are not supported"));
         verify(orderRepository, never()).save(any(Order.class));
     }
 
@@ -399,6 +436,7 @@ public class OrderServiceTest {
                 .build();
 
         when(productClient.getProductById(physicalProductId)).thenReturn(physicalProduct);
+        org.springframework.test.util.ReflectionTestUtils.setField(orderService, "physicalProductsEnabled", true);
 
         CreateOrderRequest request = CreateOrderRequest.builder()
                 .items(List.of(OrderItemRequest.builder()

@@ -47,6 +47,9 @@ public class OrderService {
     @Autowired(required = false)
     private NotificationClient notificationClient;
 
+    @Value("${app.physical-products.enabled:false}")
+    private boolean physicalProductsEnabled;
+
     public void setFulfillmentClient(FulfillmentClient fulfillmentClient) {
         this.fulfillmentClient = fulfillmentClient;
     }
@@ -113,6 +116,9 @@ public class OrderService {
                 }
 
                 if (!isDigital) {
+                    if (!physicalProductsEnabled) {
+                        throw new BadRequestException("Physical product orders are not supported in this release. ByteVault Media is currently configured for digital assets only.");
+                    }
                     hasPhysical = true;
                     if (inventoryClient != null) {
                         try {
