@@ -23,21 +23,26 @@ if (fs.existsSync(envPath)) {
   }
 }
 
-const dbPass = process.env.DB_PASSWORD || 'Rohith@358';
+const dbPass = process.env.DB_PASSWORD || '';
 
 console.log('Starting fulfillment-service on port 8088...');
-const child = spawn('java', [
-  `-Dspring.datasource.password=${dbPass}`,
+const args = [
   '-Xms64m',
   '-Xmx320m',
   '-XX:MetaspaceSize=64m',
   '-XX:MaxMetaspaceSize=180m',
   '-Xss384k',
   '-XX:+TieredCompilation',
-  '-XX:TieredStopAtLevel=1',
-  '-jar',
-  jarPath
-], {
+  '-XX:TieredStopAtLevel=1'
+];
+
+if (dbPass) {
+  args.push(`-Dspring.datasource.password=${dbPass}`);
+}
+
+args.push('-jar', jarPath);
+
+const child = spawn('java', args, {
   cwd: backendDir,
   env: process.env,
   stdio: 'ignore',

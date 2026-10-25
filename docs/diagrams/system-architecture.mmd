@@ -1,0 +1,35 @@
+graph TD
+    Client["Browser / Swagger UI / Client Apps"] -->|HTTPS :8443 / HTTP :8080| Gateway["Spring Cloud Gateway (:8080)<br/>• JwtGatewayFilter (15-min JWT Auth)<br/>• Swagger UI Aggregation<br/>• Inject X-Gateway-Secret & CorrelationId"]
+
+    subgraph Service Discovery
+        Eureka["Eureka Discovery Server (:8761)<br/>• Registry of 8 Active Services<br/>• 30s Heartbeat Renewal"]
+    end
+
+    Gateway -.->|Service Resolution| Eureka
+
+    subgraph Active Microservices Domain
+        Gateway -->|/api/v1/auth/**, /api/v1/users/**| IdentitySvc["Identity Service (:8081)<br/>• Auth & User Management<br/>• Vendor Onboarding & Approval Gate"]
+        Gateway -->|/api/v1/products/**| ProductSvc["Product Service (:8084)<br/>• Digital Catalog & Pricing<br/>• HMAC Pre-Signed Asset URLs"]
+        Gateway -->|/api/v1/cart/**| CartSvc["Cart Service (:8086)<br/>• User Shopping Cart Persistence (carts, cart_items)"]
+        Gateway -->|/api/v1/orders/**| OrderSvc["Order Service (:8087)<br/>• Digital Order Lifecycle<br/>• Transactional Outbox Events<br/>• Stale Order Expiry Scheduler"]
+        Gateway -->|/api/v1/payments/**| PaymentSvc["Payment Service (:8091)<br/>• Razorpay HMAC Verification<br/>• 90/10 Vendor Royalty Ledger<br/>• Reconciler Scheduler"]
+        Gateway -->|/api/v1/downloads/**, /api/v1/entitlements/**| FulfillmentSvc["Fulfillment Service (:8088)<br/>• Digital Entitlements & Licenses<br/>• Binary Download Streamer"]
+        Gateway -->|/api/v1/notifications/**| NotifSvc["Notification Service (:8090)<br/>• Transactional Email Dispatcher"]
+    end
+
+    subgraph Inter-Service Synchronous OpenFeign Communication
+        PaymentSvc -->|Feign: mark-paid / getBreakdown| OrderSvc
+        OrderSvc -->|Outbox Feign: fulfill-digital-order| FulfillmentSvc
+        FulfillmentSvc -->|Feign: get-product-details| ProductSvc
+        OrderSvc -.->|Defensive Feign: order-confirmation| NotifSvc
+        IdentitySvc -.->|Defensive Feign: password-reset| NotifSvc
+    end
+
+    subgraph Dedicated PostgreSQL Databases
+        IdentitySvc --> DB_Identity[("identity_db")]
+        ProductSvc --> DB_Product[("product_db")]
+        CartSvc --> DB_Cart[("cart_db<br/>(carts, cart_items)")]
+        OrderSvc --> DB_Order[("order_db<br/>(orders + outbox_events)")]
+        PaymentSvc --> DB_Payment[("payment_db<br/>(payments + vendor_ledger)")]
+        FulfillmentSvc --> DB_Fulfillment[("fulfillment_db<br/>(entitlements)")]
+    end

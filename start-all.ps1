@@ -4,7 +4,7 @@ param(
 )
 
 $ErrorActionPreference = "Continue"
-$rootDir = "D:\ProductManagementSystem"
+$rootDir = $PSScriptRoot
 $backendDir = "$rootDir\backend"
 $frontendDir = "$rootDir\frontend\customer-portal"
 $logsDir = "$rootDir\logs"

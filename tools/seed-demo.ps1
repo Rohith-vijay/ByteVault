@@ -151,13 +151,62 @@ $softwareCat = ($categories | Where-Object { $_.name -like "*Software*" })[0]
 $catId1 = if ($ebookCat) { $ebookCat.id } else { 1 }
 $catId2 = if ($softwareCat) { $softwareCat.id } else { 2 }
 
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+
+function Build-ValidPdfBytes([string]$title, [string]$subtitle) {
+    $streamContent = "BT`n/F1 20 Tf`n50 720 Td`n($title) Tj`n/F1 12 Tf`n0 -30 Td`n($subtitle) Tj`n/F1 10 Tf`n0 -25 Td`n(ByteVault Media - Cryptographically Verified Digital Asset Delivery) Tj`n0 -20 Td`n(Licensed for academic capstone presentation and review.) Tj`nET"
+    $streamLen = [System.Text.Encoding]::ASCII.GetByteCount($streamContent)
+    
+    $header = "%PDF-1.4`n"
+    $obj1 = "1 0 obj`n<< /Type /Catalog /Pages 2 0 R >>`nendobj`n"
+    $obj2 = "2 0 obj`n<< /Type /Pages /Kids [3 0 R] /Count 1 >>`nendobj`n"
+    $obj3 = "3 0 obj`n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>`nendobj`n"
+    $obj4 = "4 0 obj`n<< /Length $streamLen >>`nstream`n$streamContent`nendstream`nendobj`n"
+    $obj5 = "5 0 obj`n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>`nendobj`n"
+    
+    $offset1 = [System.Text.Encoding]::ASCII.GetByteCount($header)
+    $offset2 = $offset1 + [System.Text.Encoding]::ASCII.GetByteCount($obj1)
+    $offset3 = $offset2 + [System.Text.Encoding]::ASCII.GetByteCount($obj2)
+    $offset4 = $offset3 + [System.Text.Encoding]::ASCII.GetByteCount($obj3)
+    $offset5 = $offset4 + [System.Text.Encoding]::ASCII.GetByteCount($obj4)
+    $xrefOffset = $offset5 + [System.Text.Encoding]::ASCII.GetByteCount($obj5)
+    
+    $xref = "xref`n0 6`n0000000000 65535 f `n" +
+            ("{0:D10} 00000 n `n" -f $offset1) +
+            ("{0:D10} 00000 n `n" -f $offset2) +
+            ("{0:D10} 00000 n `n" -f $offset3) +
+            ("{0:D10} 00000 n `n" -f $offset4) +
+            ("{0:D10} 00000 n `n" -f $offset5)
+    
+    $trailer = "trailer`n<< /Size 6 /Root 1 0 R >>`nstartxref`n$xrefOffset`n%%EOF`n"
+    
+    $fullPdf = $header + $obj1 + $obj2 + $obj3 + $obj4 + $obj5 + $xref + $trailer
+    return [System.Text.Encoding]::ASCII.GetBytes($fullPdf)
+}
+
+function Build-ValidZipBytes([string]$packageName, [string]$description) {
+    $tempZip = [System.IO.Path]::GetTempFileName()
+    Remove-Item $tempZip -Force -ErrorAction SilentlyContinue
+    $tempDir = Join-Path ([System.IO.Path]::GetTempPath()) ([System.Guid]::NewGuid().ToString())
+    New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
+    Set-Content -Path (Join-Path $tempDir "README.txt") -Value "Package: $packageName`nDescription: $description`nByteVault Media Verified Binary Distribution."
+    Set-Content -Path (Join-Path $tempDir "LICENSE.txt") -Value "Copyright 2026 ByteVault Media. Licensed to verified customer."
+    Set-Content -Path (Join-Path $tempDir "manifest.json") -Value "{`"package`": `"$packageName`", `"version`": `"1.0.0`", `"verified`": true}"
+    [System.IO.Compression.ZipFile]::CreateFromDirectory($tempDir, $tempZip)
+    $bytes = [System.IO.File]::ReadAllBytes($tempZip)
+    Remove-Item $tempDir -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item $tempZip -Force -ErrorAction SilentlyContinue
+    return $bytes
+}
+
 # 5. Seed at least Four Digital Products with Assets
 Write-Host "`n[5/5] Ensuring 4 Digital Products with Downloadable Assets exist..." -ForegroundColor Yellow
 
-$assetDir = "D:\ProductManagementSystem\temp-assets"
-if (-not (Test-Path $assetDir)) {
-    New-Item -ItemType Directory -Path $assetDir | Out-Null
-}
+$rootDir = Split-Path -Parent $PSScriptRoot
+$assetDir = Join-Path $rootDir "temp-assets"
+$backendAssetDir = Join-Path $rootDir "backend\temp-assets"
+if (-not (Test-Path $assetDir)) { New-Item -ItemType Directory -Path $assetDir -Force | Out-Null }
+if (-not (Test-Path $backendAssetDir)) { New-Item -ItemType Directory -Path $backendAssetDir -Force | Out-Null }
 
 $desiredProducts = @(
     @{
@@ -168,7 +217,7 @@ $desiredProducts = @(
         Sku = "BV-DIG-CLOUD-01"
         CategoryId = $catId1
         FileName = "cloud-architecture-masterclass.pdf"
-        Content = "%PDF-1.4 ByteVault Official Cloud Architecture Masterclass Guide. Licensed to verified customer."
+        IsPdf = $true
     },
     @{
         VendorIndex = 0
@@ -178,7 +227,7 @@ $desiredProducts = @(
         Sku = "BV-DIG-ZT-02"
         CategoryId = $catId1
         FileName = "zero-trust-handbook.pdf"
-        Content = "%PDF-1.4 ByteVault Zero Trust Security Blueprint. Copyright ByteVault Media."
+        IsPdf = $true
     },
     @{
         VendorIndex = 1
@@ -188,7 +237,7 @@ $desiredProducts = @(
         Sku = "BV-DIG-QUANTUM-03"
         CategoryId = $catId2
         FileName = "quantum-engine-sdk.zip"
-        Content = "PK\x03\x04 ByteVault Quantum Engine SDK Binary Distribution package. All rights reserved."
+        IsPdf = $false
     },
     @{
         VendorIndex = 1
@@ -198,12 +247,13 @@ $desiredProducts = @(
         Sku = "BV-DIG-CICD-04"
         CategoryId = $catId2
         FileName = "devops-cicd-kit.zip"
-        Content = "PK\x03\x04 ByteVault DevOps Pipeline & Deployment Scripts bundle."
+        IsPdf = $false
     }
 )
 
 $existingCatalogRes = Invoke-ApiGet "$GatewayUrl/api/v1/products"
 $existingCatalog = $existingCatalogRes.data
+$seededSummary = @()
 
 foreach ($prod in $desiredProducts) {
     $existing = @($existingCatalog | Where-Object { $_.sku -eq $prod.Sku -or $_.name -eq $prod.Name })
@@ -223,7 +273,7 @@ foreach ($prod in $desiredProducts) {
             productType = "DIGITAL"
             categoryId = $prod.CategoryId
             fileName = $prod.FileName
-            fileType = if ($prod.FileName.EndsWith(".pdf")) { "application/pdf" } else { "application/zip" }
+            fileType = if ($prod.IsPdf) { "application/pdf" } else { "application/zip" }
             fileSize = 1048576
             fileVersion = "1.0.0"
         }
@@ -237,14 +287,22 @@ foreach ($prod in $desiredProducts) {
         Write-Host "Product '$($prod.Name)' created & published (ID: $productId)." -ForegroundColor Green
     }
 
-    # Ensure real downloadable asset file exists on disk
+    # Generate real, fully readable binary file
+    $fileBytes = if ($prod.IsPdf) {
+        Build-ValidPdfBytes $prod.Name $prod.Description
+    } else {
+        Build-ValidZipBytes $prod.Name $prod.Description
+    }
+
+    # Ensure real downloadable asset file exists on disk in all candidate fallback locations
     $assetPath = Join-Path $assetDir $prod.FileName
-    Set-Content -Path $assetPath -Value $prod.Content -Encoding UTF8
+    [System.IO.File]::WriteAllBytes($assetPath, $fileBytes)
+    $backendAssetPath = Join-Path $backendAssetDir $prod.FileName
+    [System.IO.File]::WriteAllBytes($backendAssetPath, $fileBytes)
 
     # Upload real asset through Admin API (multipart/form-data)
     try {
         $uploadUrl = "$GatewayUrl/api/v1/products/$productId/assets"
-        $fileBytes = [System.IO.File]::ReadAllBytes($assetPath)
         $boundary = [System.Guid]::NewGuid().ToString()
         $contentType = "multipart/form-data; boundary=$boundary"
 
@@ -253,7 +311,8 @@ foreach ($prod in $desiredProducts) {
 
         $writer.WriteLine("--$boundary")
         $writer.WriteLine("Content-Disposition: form-data; name=`"file`"; filename=`"$($prod.FileName)`"")
-        $writer.WriteLine("Content-Type: application/octet-stream")
+        $mime = if ($prod.IsPdf) { "application/pdf" } else { "application/zip" }
+        $writer.WriteLine("Content-Type: $mime")
         $writer.WriteLine()
         $writer.Flush()
 
@@ -268,13 +327,25 @@ foreach ($prod in $desiredProducts) {
             "Content-Type"  = $contentType
         }
 
-        $null = Invoke-RestMethod -Uri $uploadUrl -Method Post -Headers $uploadHeaders -Body $postData
-        Write-Host "Asset $($prod.FileName) attached to product $productId." -ForegroundColor Green
+        $uploadRes = Invoke-RestMethod -Uri $uploadUrl -Method Post -Headers $uploadHeaders -Body $postData
+        $storageKey = if ($uploadRes.data -and $uploadRes.data.storageKey) { $uploadRes.data.storageKey } else { "" }
+        Write-Host "Real binary asset $($prod.FileName) ($($fileBytes.Length) bytes) attached to product $productId (Key: $storageKey)." -ForegroundColor Green
     } catch {
         Write-Host "Asset upload note: $_" -ForegroundColor Gray
+    }
+
+    $seededSummary += [pscustomobject]@{
+        Name      = $prod.Name
+        ProductId = $productId
+        Sku       = $prod.Sku
+        Price     = $prod.Price
+        FileName  = $prod.FileName
+        Size      = $fileBytes.Length
     }
 }
 
 Write-Host "`n=====================================================" -ForegroundColor Cyan
 Write-Host "ByteVault Demo Data Seeding Completed Successfully!" -ForegroundColor Cyan
+Write-Host "Seeded Products Summary:" -ForegroundColor Cyan
+$seededSummary | Format-Table Name, Sku, Price, ProductId, FileName, Size
 Write-Host "=====================================================" -ForegroundColor Cyan

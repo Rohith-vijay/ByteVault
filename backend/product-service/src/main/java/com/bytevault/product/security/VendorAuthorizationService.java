@@ -33,7 +33,8 @@ public class VendorAuthorizationService {
 
         long now = System.currentTimeMillis();
         CachedVendorStatus cached = vendorStatusCache.get(vendorId);
-        if (cached != null && (now - cached.cachedAt() < CACHE_TTL_MS)) {
+        long ttl = (cached != null && cached.approved()) ? CACHE_TTL_MS : 2_000L;
+        if (cached != null && (now - cached.cachedAt() < ttl)) {
             return cached.approved();
         }
 

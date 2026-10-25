@@ -3,7 +3,7 @@ param (
 )
 
 $ErrorActionPreference = "Continue"
-$backend = "D:\ProductManagementSystem\backend"
+$backend = Join-Path $PSScriptRoot "backend"
 
 $allServices = @{
     "discovery-server" = @{ Port = 8761; Jar = "$backend\discovery-server\target\discovery-server-1.0.0-SNAPSHOT.jar" };

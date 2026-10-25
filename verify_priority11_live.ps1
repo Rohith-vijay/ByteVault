@@ -14,7 +14,7 @@ if (Test-Path .env) {
     }
 }
 $psql = "C:\Program Files\PostgreSQL\13\bin\psql.exe"
-$env:PGPASSWORD = if ($env:DB_PASSWORD) { $env:DB_PASSWORD } elseif ($env:PGPASSWORD) { $env:PGPASSWORD } else { "Rohith@358" }
+$env:PGPASSWORD = if ($env:DB_PASSWORD) { $env:DB_PASSWORD } elseif ($env:PGPASSWORD) { $env:PGPASSWORD } else { throw "DB_PASSWORD or PGPASSWORD must be configured in environment or .env" }
 $baseUrl = "http://localhost:8080"
 $rand = Get-Random
 
@@ -106,7 +106,7 @@ $custUserId = $custReg.data.userId
 $custToken = $custReg.data.token
 $custHeaders = @{ Authorization = "Bearer $custToken"; "Content-Type" = "application/json" }
 
-$orderRes = Invoke-RestMethod -Uri "$baseUrl/api/v1/orders" -Method Post -Headers $custHeaders -Body (@{
+$orderRes = Invoke-RestMethod -Uri "$baseUrl/api/v1/orders" -Method Post -Headers $custHeaders -ContentType "application/json" -Body (@{
     items = @(
         @{ productId = $prod1Id; quantity = 1 },
         @{ productId = $prod2Id; quantity = 1 }
@@ -119,7 +119,7 @@ Write-Host "Multi-vendor order created: $orderId (Status: $($orderRes.data.statu
 
 # 4. Live Payment Verification & Vendor Ledger Wiring (A1)
 Write-Host "`n--- [A1] Live Purchase & Multi-Vendor Ledger Credit Verification ---" -ForegroundColor Yellow
-$payOrder = Invoke-RestMethod -Uri "$baseUrl/api/v1/payments/create-order" -Method Post -Headers $custHeaders -Body (@{
+$payOrder = Invoke-RestMethod -Uri "$baseUrl/api/v1/payments/create-order" -Method Post -Headers $custHeaders -ContentType "application/json" -Body (@{
     amount = 100.00
     currency = "INR"
     receipt = $orderId
@@ -127,7 +127,7 @@ $payOrder = Invoke-RestMethod -Uri "$baseUrl/api/v1/payments/create-order" -Meth
 $rpOrderId = if ($payOrder.data) { $payOrder.data.orderId } else { $payOrder.orderId }
 Write-Host "Payment order initialized: $rpOrderId" -ForegroundColor Green
 
-$verifyRes = Invoke-RestMethod -Uri "$baseUrl/api/v1/payments/verify" -Method Post -Headers $custHeaders -Body (@{
+$verifyRes = Invoke-RestMethod -Uri "$baseUrl/api/v1/payments/verify" -Method Post -Headers $custHeaders -ContentType "application/json" -Body (@{
     razorpayOrderId = $rpOrderId
     razorpayPaymentId = "pay_live_$rand"
     dbOrderId = $orderId
@@ -181,7 +181,7 @@ Write-Host "Checking initial entitlement status before refund:"
 & $psql -U postgres -w -h localhost -p 5432 -d fulfillment_db -c "SELECT id, order_id, product_id, status FROM entitlements WHERE order_id = '$orderId';"
 
 Write-Host "`nExecuting FULL REFUND for order $orderId..."
-$fullRefundRes = Invoke-RestMethod -Uri "$baseUrl/api/v1/payments/refund" -Method Post -Headers $adminHeaders -Body (@{
+$fullRefundRes = Invoke-RestMethod -Uri "$baseUrl/api/v1/payments/refund" -Method Post -Headers $adminHeaders -ContentType "application/json" -Body (@{
     orderId = $orderId
     amount = 100.00
     reason = "Customer requested full refund"
@@ -208,19 +208,19 @@ try {
 
 # Partial Refund test on fresh Order 2
 Write-Host "`nTesting PARTIAL REFUND on fresh Order 2..."
-$order2Res = Invoke-RestMethod -Uri "$baseUrl/api/v1/orders" -Method Post -Headers $custHeaders -Body (@{
+$order2Res = Invoke-RestMethod -Uri "$baseUrl/api/v1/orders" -Method Post -Headers $custHeaders -ContentType "application/json" -Body (@{
     items = @(@{ productId = $prod1Id; quantity = 1 })
     customerName = "Verified Customer $rand"
     customerEmail = $custEmail
 } | ConvertTo-Json)
 $order2Id = $order2Res.data.id
 
-$payOrder2 = Invoke-RestMethod -Uri "$baseUrl/api/v1/payments/create-order" -Method Post -Headers $custHeaders -Body (@{
+$payOrder2 = Invoke-RestMethod -Uri "$baseUrl/api/v1/payments/create-order" -Method Post -Headers $custHeaders -ContentType "application/json" -Body (@{
     amount = 60.00; currency = "INR"; receipt = $order2Id
 } | ConvertTo-Json)
 $rpOrder2Id = if ($payOrder2.data) { $payOrder2.data.orderId } else { $payOrder2.orderId }
 
-Invoke-RestMethod -Uri "$baseUrl/api/v1/payments/verify" -Method Post -Headers $custHeaders -Body (@{
+Invoke-RestMethod -Uri "$baseUrl/api/v1/payments/verify" -Method Post -Headers $custHeaders -ContentType "application/json" -Body (@{
     razorpayOrderId = $rpOrder2Id
     razorpayPaymentId = "pay_live2_$rand"
     dbOrderId = $order2Id
@@ -228,7 +228,7 @@ Invoke-RestMethod -Uri "$baseUrl/api/v1/payments/verify" -Method Post -Headers $
 } | ConvertTo-Json) | Out-Null
 
 Write-Host "Order 2 verified. Now executing 50% partial refund of 30.00 INR..."
-$partialRefundRes = Invoke-RestMethod -Uri "$baseUrl/api/v1/payments/refund" -Method Post -Headers $adminHeaders -Body (@{
+$partialRefundRes = Invoke-RestMethod -Uri "$baseUrl/api/v1/payments/refund" -Method Post -Headers $adminHeaders -ContentType "application/json" -Body (@{
     orderId = $order2Id
     amount = 30.00
     reason = "Partial goodwill credit"
@@ -244,7 +244,7 @@ Write-Host "--- Database Evidence: Entitlement in fulfillment_db remains ACTIVE 
 
 # 8. Order Expiry Job (A5)
 Write-Host "`n--- [A5] Stale Order Expiry Job ---" -ForegroundColor Yellow
-$order3Res = Invoke-RestMethod -Uri "$baseUrl/api/v1/orders" -Method Post -Headers $custHeaders -Body (@{
+$order3Res = Invoke-RestMethod -Uri "$baseUrl/api/v1/orders" -Method Post -Headers $custHeaders -ContentType "application/json" -Body (@{
     items = @(@{ productId = $prod1Id; quantity = 1 })
     customerName = "Verified Customer $rand"
     customerEmail = $custEmail

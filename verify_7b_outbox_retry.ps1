@@ -20,7 +20,7 @@ if (Test-Path .env) {
     }
 }
 $psql = "C:\Program Files\PostgreSQL\13\bin\psql.exe"
-$env:PGPASSWORD = if ($env:DB_PASSWORD) { $env:DB_PASSWORD } elseif ($env:PGPASSWORD) { $env:PGPASSWORD } else { "Rohith@358" }
+$env:PGPASSWORD = if ($env:DB_PASSWORD) { $env:DB_PASSWORD } elseif ($env:PGPASSWORD) { $env:PGPASSWORD } else { throw "DB_PASSWORD or PGPASSWORD must be configured in environment or .env" }
 
 # Step 1: Find and kill Fulfillment Service (Port 8088)
 Write-Host "`n[Step 1] Stopping Fulfillment Service (Port 8088)..." -ForegroundColor Yellow

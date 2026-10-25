@@ -7,18 +7,18 @@ $baseUrl = "http://localhost:8080"
 $rand = Get-Random
 
 # Test 1: Service Discovery
-Write-Host "`n[1/10] Verifying Eureka Service Discovery..." -ForegroundColor Yellow
+Write-Host "`n[1/11] Verifying Eureka Service Discovery..." -ForegroundColor Yellow
 $apps = (Invoke-RestMethod -Uri "http://localhost:8761/eureka/apps" -Headers @{Accept="application/json"}).applications.application
 $appNames = $apps | Select-Object -ExpandProperty name
 Write-Host "Registered Services ($($appNames.Count)): $($appNames -join ', ')" -ForegroundColor Green
 
 # Test 2: Public Product Catalog
-Write-Host "`n[2/10] Verifying Public Product Catalog..." -ForegroundColor Yellow
+Write-Host "`n[2/11] Verifying Public Product Catalog..." -ForegroundColor Yellow
 $products = Invoke-RestMethod -Uri "$baseUrl/api/v1/products" -Method Get
 Write-Host "Found $($products.data.Count) published products in catalog." -ForegroundColor Green
 
 # Test 3: Customer Registration & Token
-Write-Host "`n[3/10] Verifying Customer Registration and Auth Flow..." -ForegroundColor Yellow
+Write-Host "`n[3/11] Verifying Customer Registration and Auth Flow..." -ForegroundColor Yellow
 $custRes = Invoke-RestMethod -Uri "$baseUrl/api/v1/auth/register" -Method Post -Body (@{
     email = "verifier_cust_$rand@bytevault.com"
     password = "Password@123"
@@ -31,7 +31,7 @@ $headers = @{ Authorization = "Bearer $token"; "Content-Type" = "application/jso
 Write-Host "Customer created (UserId: $userId). Token acquired." -ForegroundColor Green
 
 # Test 4: Vendor Registration with PENDING profile
-Write-Host "`n[4/10] Verifying Vendor Registration with synchronous PENDING profile..." -ForegroundColor Yellow
+Write-Host "`n[4/11] Verifying Vendor Registration with synchronous PENDING profile..." -ForegroundColor Yellow
 $vendRes = Invoke-RestMethod -Uri "$baseUrl/api/v1/auth/register" -Method Post -Body (@{
     email = "verifier_vend_$rand@bytevault.com"
     password = "Password@123"
@@ -43,7 +43,7 @@ $vToken = $vendRes.data.token
 Write-Host "Vendor created (UserId: $vUserId, Role: $($vendRes.data.role))." -ForegroundColor Green
 
 # Test 5: Vendor Write-Gate while PENDING & Admin Approval
-Write-Host "`n[5/10] Verifying Vendor Write-Gate (Should block while PENDING)..." -ForegroundColor Yellow
+Write-Host "`n[5/11] Verifying Vendor Write-Gate (Should block while PENDING)..." -ForegroundColor Yellow
 try {
     Invoke-RestMethod -Uri "$baseUrl/api/v1/products/vendor?publish=true" -Method Post -Headers @{Authorization = "Bearer $vToken"} -Body (@{
         name = "Blocked Product"; price = 10.0; productType = "DIGITAL"; categoryId = 1
@@ -67,6 +67,7 @@ $vendProfile = ($allVendors.data | Where-Object { $_.userId -eq $vUserId })[0]
 if ($vendProfile) {
     $null = Invoke-RestMethod -Uri "$baseUrl/api/v1/admin/vendors/$($vendProfile.id)/approve" -Method Post -Headers $adminHeaders
     Write-Host "Vendor approved by Admin: Profile $($vendProfile.id)" -ForegroundColor Green
+    Start-Sleep -Seconds 3
 }
 
 # Approved vendor creates and publishes a test product
@@ -77,12 +78,13 @@ $createProdRes = Invoke-RestMethod -Uri "$baseUrl/api/v1/products/vendor?publish
     productType = "DIGITAL"
     categoryId = 1
 } | ConvertTo-Json)
-$prodId = $createProdRes.data.id
-$prodPrice = $createProdRes.data.price
-Write-Host "Vendor successfully published product: $prodId ($($createProdRes.data.name)) at price $prodPrice" -ForegroundColor Green
+$prodId = if ($createProdRes.id) { $createProdRes.id } else { $createProdRes.data.id }
+$prodPrice = if ($createProdRes.price) { $createProdRes.price } else { $createProdRes.data.price }
+$prodName = if ($createProdRes.name) { $createProdRes.name } else { $createProdRes.data.name }
+Write-Host "Vendor successfully published product: $prodId ($prodName) at price $prodPrice" -ForegroundColor Green
 
 # Test 6: Security Perimeter Enforcement (No Token -> 401)
-Write-Host "`n[6/10] Verifying Gateway Auth Enforcement (Missing Token -> 401)..." -ForegroundColor Yellow
+Write-Host "`n[6/11] Verifying Gateway Auth Enforcement (Missing Token -> 401)..." -ForegroundColor Yellow
 try {
     Invoke-RestMethod -Uri "$baseUrl/api/v1/users/me" -Method Get
     Write-Host 'FAIL: Unauthenticated request succeeded!' -ForegroundColor Red
@@ -91,7 +93,7 @@ try {
 }
 
 # Test 7: Direct Downstream Perimeter Enforcement (Direct bypass -> 403)
-Write-Host "`n[7/10] Verifying Downstream Perimeter Filter (Direct bypass -> 403)..." -ForegroundColor Yellow
+Write-Host "`n[7/11] Verifying Downstream Perimeter Filter (Direct bypass -> 403)..." -ForegroundColor Yellow
 try {
     Invoke-RestMethod -Uri "http://localhost:8081/api/v1/users/me" -Method Get
     Write-Host 'FAIL: Direct downstream bypass succeeded!' -ForegroundColor Red
@@ -100,12 +102,12 @@ try {
 }
 
 # Test 8: Cart Operations
-Write-Host "`n[8/10] Verifying Cart Operations..." -ForegroundColor Yellow
+Write-Host "`n[8/11] Verifying Cart Operations..." -ForegroundColor Yellow
 $cart = Invoke-RestMethod -Uri "$baseUrl/api/v1/cart/items" -Method Post -Headers $headers -Body (@{ productId = $prodId; quantity = 1 } | ConvertTo-Json)
 Write-Host "Cart item added. Total items: $($cart.data.items.Count), Total amount: $($cart.data.totalAmount)" -ForegroundColor Green
 
 # Test 9: Digital Order Creation, Payment Verification, and Synchronous Fulfillment
-Write-Host "`n[9/10] Verifying Digital Order, Payment Verification and Synchronous Fulfillment..." -ForegroundColor Yellow
+Write-Host "`n[9/11] Verifying Digital Order, Payment Verification and Synchronous Fulfillment..." -ForegroundColor Yellow
 $order = Invoke-RestMethod -Uri "$baseUrl/api/v1/orders" -Method Post -Headers $headers -Body (@{
     items = @(@{ productId = $prodId; quantity = 1 })
     customerName = "Verified Customer"
@@ -140,7 +142,7 @@ $orderCheck = Invoke-RestMethod -Uri "$baseUrl/api/v1/orders/$orderId" -Method G
 Write-Host "Order confirmed in order-service. Status: $($orderCheck.data.status)" -ForegroundColor Green
 
 # Test 10: Entitlements & Notifications
-Write-Host "`n[10/10] Verifying Entitlements and Transactional Notification..." -ForegroundColor Yellow
+Write-Host "`n[10/11] Verifying Entitlements and Transactional Notification..." -ForegroundColor Yellow
 Start-Sleep -Seconds 1
 $entitlements = Invoke-RestMethod -Uri "$baseUrl/api/v1/entitlements" -Method Get -Headers $headers
 Write-Host "Entitlements granted: $($entitlements.data.Count). Active license: $($entitlements.data[0].licenseKey)" -ForegroundColor Green

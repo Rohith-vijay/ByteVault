@@ -8,12 +8,16 @@
 
 ## 1. Architectural Philosophy & Decisions
 
-Prior iterations of this academic capstone suffered from architectural bloat (15 services, Redis cache, RabbitMQ event broker, Netflix Zuul/Config server). Through rigorous empirical refinement for Review 2:
-1. **Zero Message Brokers on Digital Path:** RabbitMQ was replaced with synchronous OpenFeign inter-service communication coupled with the **Transactional Outbox Pattern** in PostgreSQL. This eliminated asynchronous stalling, broker connection overhead, and split-brain states while achieving guaranteed at-least-once delivery.
-2. **Zero Cache Servers:** Redis was eliminated. Cart persistence was unified into PostgreSQL using robust relational modeling and indexing.
-3. **Database-per-Service Isolation:** 6 independent PostgreSQL databases. No cross-database joins or queries are permitted. All cross-boundary data is obtained via declarative OpenFeign REST clients.
+Prior iterations of this project included dormant modules, RabbitMQ event brokering, and standalone Spring Cloud Config Server. Through empirical refinement for Review 2:
+1. **Zero Message Brokers on Digital Path:** RabbitMQ was replaced with synchronous OpenFeign inter-service communication coupled with the **Transactional Outbox Pattern** in PostgreSQL (`order_db.outbox_events`). This eliminated broker connection overhead and operational complexity, providing at-least-once delivery within the retry window (20 attempts with exponential backoff up to 30s cap = ~8.5 minutes); after that, the event is marked `FAILED` and flagged for manual handling / administrative reconciliation.
+2. **Zero Cache Servers:** Redis was eliminated. Cart persistence was consolidated into PostgreSQL `cart_db` using normalized relational tables (`carts` and `cart_items`).
+3. **Database-per-Service Isolation:** 6 independent PostgreSQL databases (`identity_db`, `product_db`, `cart_db`, `order_db`, `payment_db`, `fulfillment_db`). No cross-database joins or queries are permitted. All cross-boundary data is obtained via declarative OpenFeign REST clients (`CommonFeignConfig`).
 4. **Digital-Only Enforcement:** Physical inventory, shipping, and warehouse microservices are kept dormant (`app.physical-products.enabled=false`) to ensure 100% stable, demonstrable digital flows for Review 2.
-5. **Zero-Trust Downstream Perimeter:** Downstream services reject any request lacking the cryptographic `X-Gateway-Secret` header injected by Spring Cloud Gateway.
+5. **Zero-Trust Downstream Perimeter:** Downstream services reject any request lacking the shared `X-Gateway-Secret` header injected by Spring Cloud Gateway (`DownstreamSecurityFilter`).
+6. **Email Notification Dispatch:** Explicit separation of responsibilities:
+   - `IdentityService`: Dispatches password reset emails (`/api/v1/auth/forgot-password`).
+   - `OrderService`: Dispatches order confirmation emails via its transactional `OutboxPublisherService` calling `NotificationService`.
+   - `PaymentService`: Does NOT call `NotificationService`.
 
 ---
 
@@ -32,7 +36,7 @@ graph TD
     subgraph Active Microservices Domain
         Gateway -->|/api/v1/auth/**, /api/v1/users/**| IdentitySvc["Identity Service (:8081)<br/>• Auth & User Management<br/>• Vendor Onboarding & Approval Gate"]
         Gateway -->|/api/v1/products/**| ProductSvc["Product Service (:8084)<br/>• Digital Catalog & Pricing<br/>• HMAC Pre-Signed Asset URLs"]
-        Gateway -->|/api/v1/cart/**| CartSvc["Cart Service (:8086)<br/>• User Shopping Cart Persistence"]
+        Gateway -->|/api/v1/cart/**| CartSvc["Cart Service (:8086)<br/>• User Shopping Cart Persistence (carts, cart_items)"]
         Gateway -->|/api/v1/orders/**| OrderSvc["Order Service (:8087)<br/>• Digital Order Lifecycle<br/>• Transactional Outbox Events<br/>• Stale Order Expiry Scheduler"]
         Gateway -->|/api/v1/payments/**| PaymentSvc["Payment Service (:8091)<br/>• Razorpay HMAC Verification<br/>• 90/10 Vendor Royalty Ledger<br/>• Reconciler Scheduler"]
         Gateway -->|/api/v1/downloads/**, /api/v1/entitlements/**| FulfillmentSvc["Fulfillment Service (:8088)<br/>• Digital Entitlements & Licenses<br/>• Binary Download Streamer"]
@@ -41,16 +45,16 @@ graph TD
 
     subgraph Inter-Service Synchronous OpenFeign Communication
         PaymentSvc -->|Feign: mark-paid / getBreakdown| OrderSvc
-        OrderSvc -->|Feign: fulfill-digital-order| FulfillmentSvc
+        OrderSvc -->|Outbox Feign: fulfill-digital-order| FulfillmentSvc
         FulfillmentSvc -->|Feign: get-product-details| ProductSvc
         OrderSvc -.->|Defensive Feign: order-confirmation| NotifSvc
-        PaymentSvc -.->|Defensive Feign: payment-receipt| NotifSvc
+        IdentitySvc -.->|Defensive Feign: password-reset| NotifSvc
     end
 
     subgraph Dedicated PostgreSQL Databases
         IdentitySvc --> DB_Identity[("identity_db")]
         ProductSvc --> DB_Product[("product_db")]
-        CartSvc --> DB_Cart[("cart_db")]
+        CartSvc --> DB_Cart[("cart_db<br/>(carts, cart_items)")]
         OrderSvc --> DB_Order[("order_db<br/>(orders + outbox_events)")]
         PaymentSvc --> DB_Payment[("payment_db<br/>(payments + vendor_ledger)")]
         FulfillmentSvc --> DB_Fulfillment[("fulfillment_db<br/>(entitlements)")]
@@ -84,12 +88,12 @@ sequenceDiagram
     Customer->>Gateway: POST /api/v1/payments/verify
     Gateway->>Payment: Verify Razorpay HMAC-SHA256 signature
     Payment->>Order: Feign: POST /api/v1/orders/internal/{id}/mark-paid
-    Order->>Order: Update status to PAID & save OutboxEvent in DB
-    Order->>Fulfillment: Feign: POST /api/v1/fulfillment/internal/fulfill
-    Fulfillment->>Fulfillment: Issue digital license & grant Entitlement
+    Order->>Order: Update status to PAID & persist OutboxEvent in DB
     Order-->>Payment: Return 200 OK (mark-paid verified)
     Payment->>Payment: Calculate 10% platform fee & credit 90% to vendor_ledger
-    Payment-.>>Notification: Feign (defensive): Dispatch confirmation email
+    Order->>Fulfillment: Outbox Feign: POST /api/v1/fulfillment/internal/fulfill
+    Fulfillment->>Fulfillment: Issue digital license & grant Entitlement
+    Order-->>Notification: Feign (defensive): Dispatch confirmation email
     Payment-->>Customer: Return PaymentVerificationResponse (SUCCESS, SYNCED)
 
     Customer->>Gateway: GET /api/v1/downloads/{productId}
@@ -98,6 +102,10 @@ sequenceDiagram
     Customer->>Gateway: GET /api/v1/products/assets/download?key=...&expires=...&signature=...
     Gateway-->>Customer: Stream raw digital file (PDF/ZIP)
 ```
+
+> **Exported Static Diagram Assets:**
+> - System Architecture: [SVG](file:///d:/ProductManagementSystem/docs/diagrams/system-architecture.svg) | [PNG](file:///d:/ProductManagementSystem/docs/diagrams/system-architecture.png)
+> - Digital Purchase Sequence: [SVG](file:///d:/ProductManagementSystem/docs/diagrams/digital-purchase-flow.svg) | [PNG](file:///d:/ProductManagementSystem/docs/diagrams/digital-purchase-flow.png)
 
 ---
 
