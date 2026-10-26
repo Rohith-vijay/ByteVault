@@ -112,7 +112,7 @@ $outLog = Join-Path $logsDir "$logPrefix.log"
 $errLog = Join-Path $logsDir "$logPrefix-error.log"
 
 $argString = $jvmArgs -join ' '
-$cmd = "cmd.exe /c `"`"java.exe`" $argString >> `"$outLog`" 2>> `"$errLog`"`""
+$cmd = "cmd.exe /c `"java.exe $argString >> `"$outLog`" 2>> `"$errLog`"`""
 
 Write-Host "[start-service] Launching $ServiceName on port $Port..." -ForegroundColor Cyan
 
