@@ -11,9 +11,23 @@ $endpoints = @(
     @{ Name = "Notification Service API Docs"; Url = "http://localhost:8080/v3/api-docs/notification-service" }
 )
 
-Write-Host "=========================================================="
-Write-Host " BYTEVAULT MEDIA - SWAGGER & OPENAPI DOCS VERIFICATION"
-Write-Host "=========================================================="
+$rootDir = Split-Path -Parent $PSScriptRoot
+$evidenceDir = Join-Path $rootDir "docs\evidence"
+if (-not (Test-Path $evidenceDir)) { New-Item -ItemType Directory -Path $evidenceDir -Force | Out-Null }
+$logFile = Join-Path $evidenceDir "swagger-verification-20261026.log"
+
+function Log-Msg([string]$msg, [string]$color = "White") {
+    Write-Host $msg -ForegroundColor $color
+    $msg | Out-File -FilePath $logFile -Append -Encoding UTF8
+}
+
+if (Test-Path $logFile) { Remove-Item $logFile -Force }
+
+Log-Msg "==========================================================" "Cyan"
+Log-Msg " BYTEVAULT MEDIA - SWAGGER & OPENAPI DOCS VERIFICATION" "Cyan"
+Log-Msg " Execution Timestamp: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" "Cyan"
+Log-Msg " Gateway Base URL: http://localhost:8080" "Cyan"
+Log-Msg "==========================================================" "Cyan"
 
 $allPassed = $true
 
@@ -31,18 +45,19 @@ foreach ($ep in $endpoints) {
         } else {
             $detail = "(HTML bytes: $($content.Length))"
         }
-        Write-Host " [PASS] $($status) - $($ep.Name): $($ep.Url) $detail" -ForegroundColor Green
+        Log-Msg " [PASS] $($status) - $($ep.Name): $($ep.Url) $detail" "Green"
     } catch {
         $allPassed = $false
-        Write-Host " [FAIL] $($ep.Name): $($ep.Url) - $($_.Exception.Message)" -ForegroundColor Red
+        Log-Msg " [FAIL] $($ep.Name): $($ep.Url) - $($_.Exception.Message)" "Red"
     }
 }
 
-Write-Host "=========================================================="
+Log-Msg "==========================================================" "Cyan"
 if ($allPassed) {
-    Write-Host " ALL SWAGGER & OPENAPI ENDPOINTS VERIFIED SUCCESSFULLY (HTTP 200)" -ForegroundColor Green
+    Log-Msg " ALL 8 SWAGGER & OPENAPI ENDPOINTS VERIFIED SUCCESSFULLY (HTTP 200)" "Green"
+    Log-Msg " Evidence saved to: $logFile" "Green"
     exit 0
 } else {
-    Write-Host " SOME ENDPOINTS FAILED VERIFICATION" -ForegroundColor Red
+    Log-Msg " SOME ENDPOINTS FAILED VERIFICATION" "Red"
     exit 1
 }
