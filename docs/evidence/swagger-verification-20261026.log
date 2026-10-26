@@ -1,0 +1,16 @@
+﻿==========================================================
+ BYTEVAULT MEDIA - SWAGGER & OPENAPI DOCS VERIFICATION
+ Execution Timestamp: 2026-10-26 22:40:31
+ Gateway Base URL: http://localhost:8080
+==========================================================
+ [PASS] 200 - Gateway Swagger UI: http://localhost:8080/swagger-ui.html (HTML bytes: 734)
+ [PASS] 200 - Identity Service API Docs: http://localhost:8080/v3/api-docs/identity-service (Title: 'ByteVault Media API Documentation', Version: '1.0.0')
+ [PASS] 200 - Product Service API Docs: http://localhost:8080/v3/api-docs/product-service (Title: 'ByteVault Media API Documentation', Version: '1.0.0')
+ [PASS] 200 - Order Service API Docs: http://localhost:8080/v3/api-docs/order-service (Title: 'ByteVault Media API Documentation', Version: '1.0.0')
+ [PASS] 200 - Cart Service API Docs: http://localhost:8080/v3/api-docs/cart-service (Title: 'ByteVault Media API Documentation', Version: '1.0.0')
+ [PASS] 200 - Payment Service API Docs: http://localhost:8080/v3/api-docs/payment-service (Title: 'ByteVault Media API Documentation', Version: '1.0.0')
+ [PASS] 200 - Fulfillment Service API Docs: http://localhost:8080/v3/api-docs/fulfillment-service (Title: 'ByteVault Media API Documentation', Version: '1.0.0')
+ [PASS] 200 - Notification Service API Docs: http://localhost:8080/v3/api-docs/notification-service (Title: 'ByteVault Media API Documentation', Version: '1.0.0')
+==========================================================
+ ALL 8 SWAGGER & OPENAPI ENDPOINTS VERIFIED SUCCESSFULLY (HTTP 200)
+ Evidence saved to: D:\ProductManagementSystem\docs\evidence\swagger-verification-20261026.log
