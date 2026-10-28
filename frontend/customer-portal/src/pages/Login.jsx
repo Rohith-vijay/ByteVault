@@ -94,8 +94,8 @@ export const Login = () => {
             color: "#FFFFFF" 
           }}
         >
-          <Box textAlign="center" mb={4}>
-            <Box mb={2} display="inline-flex">
+          <Box sx={{ textAlign: "center", mb: 4 }}>
+            <Box sx={{ mb: 2, display: "inline-flex" }}>
               <Chip label="SECURE ACCESS" color="primary" variant="filled" uppercase />
             </Box>
             <h2 style={{ fontSize: "26px", fontWeight: 800, margin: "0 0 8px 0", color: "#FFFFFF" }}>
@@ -108,16 +108,18 @@ export const Login = () => {
 
           {/* Test Credentials Quick Selectors */}
           <Box 
-            p={4} 
-            mb={6} 
-            backgroundColor="rgba(124, 58, 237, 0.08)" 
-            border="1px solid rgba(124, 58, 237, 0.25)" 
-            borderRadius="12px"
+            sx={{
+              p: 2, 
+              mb: 3, 
+              backgroundColor: "rgba(124, 58, 237, 0.08)", 
+              border: "1px solid rgba(124, 58, 237, 0.25)", 
+              borderRadius: "12px"
+            }}
           >
             <div style={{ fontSize: "11px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "#DDD6FE", marginBottom: "8px" }}>
-              1-Click Demo Accounts (Mock Credentials)
+              1-Click Demo Accounts (Marketplace Credentials)
             </div>
-            <Box display="grid" gridTemplateColumns="repeat(3, 1fr)" gap={2}>
+            <Box sx={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 1 }}>
               <button
                 type="button"
                 onClick={() => handleAutofill("CUSTOMER")}
