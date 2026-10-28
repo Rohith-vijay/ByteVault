@@ -1,0 +1,105 @@
+[2026-10-28T05:00:07.230Z] ========================================================================================
+[2026-10-28T05:00:07.236Z]   BYTEVAULT MEDIA - COMPLETE SWAGGER & MULTI-ROLE (VENDOR, CUSTOMER, ADMIN) WORKFLOW AUDIT
+[2026-10-28T05:00:07.236Z]   Timestamp: 2026-10-28T05:00:07.236Z
+[2026-10-28T05:00:07.237Z]   Target: API Gateway [http://localhost:8080]
+[2026-10-28T05:00:07.237Z] ========================================================================================
+
+[2026-10-28T05:00:07.238Z] 
+>>> [SECTION 1] VERIFYING SWAGGER UI & OPENAPI SPECS ACROSS ALL SERVICES
+[2026-10-28T05:00:07.338Z] PASS [302] (98ms) - GET http://localhost:8080/swagger-ui.html | Gateway Swagger UI
+[2026-10-28T05:00:07.358Z] PASS [200] (18ms) - GET http://localhost:8080/v3/api-docs/identity-service | Identity Service OpenAPI Spec
+[2026-10-28T05:00:08.503Z] PASS [200] (1143ms) - GET http://localhost:8080/v3/api-docs/product-service | Product Service OpenAPI Spec
+[2026-10-28T05:00:08.521Z] PASS [200] (17ms) - GET http://localhost:8080/v3/api-docs/order-service | Order Service OpenAPI Spec
+[2026-10-28T05:00:08.547Z] PASS [200] (25ms) - GET http://localhost:8080/v3/api-docs/cart-service | Cart Service OpenAPI Spec
+[2026-10-28T05:00:08.564Z] PASS [200] (15ms) - GET http://localhost:8080/v3/api-docs/payment-service | Payment Service OpenAPI Spec
+[2026-10-28T05:00:08.585Z] PASS [200] (20ms) - GET http://localhost:8080/v3/api-docs/fulfillment-service | Fulfillment Service OpenAPI Spec
+[2026-10-28T05:00:08.600Z] PASS [200] (14ms) - GET http://localhost:8080/v3/api-docs/notification-service | Notification Service OpenAPI Spec
+[2026-10-28T05:00:08.601Z] 
+>>> [SECTION 2] ADMIN AUTHENTICATION & INITIALIZATION
+[2026-10-28T05:00:10.223Z] PASS [200] (1622ms) - POST http://localhost:8080/api/v1/auth/login | Admin Login
+[2026-10-28T05:00:10.224Z]     Authenticated Admin ID: e066e612-1df9-4fc3-9946-65cb0db99d9a, Role: ADMIN
+[2026-10-28T05:00:10.224Z] 
+>>> [SECTION 3] VENDOR WORKFLOW: REGISTRATION, APPROVAL, PRODUCTS & LEDGER
+[2026-10-28T05:00:10.960Z] PASS [200] (735ms) - POST http://localhost:8080/api/v1/auth/register | Vendor Registration
+[2026-10-28T05:00:11.552Z] PASS [200] (591ms) - POST http://localhost:8080/api/v1/auth/login | Vendor Login
+[2026-10-28T05:00:11.553Z]     Authenticated Vendor ID: aab65b38-e12e-45d5-ad0e-a458cdd94108, Email: vendor_lab_1793163607230@bytevault.com
+[2026-10-28T05:00:11.714Z] PASS [200] (160ms) - GET http://localhost:8080/api/v1/users/me/vendor-profile | Get Vendor Profile
+[2026-10-28T05:00:11.753Z] PASS [200] (37ms) - PUT http://localhost:8080/api/v1/users/me/vendor-profile | Update Vendor Profile Details
+[2026-10-28T05:00:11.792Z] PASS [200] (39ms) - POST http://localhost:8080/api/v1/users/admin/vendors/7f5a6524-6035-4592-9730-689a8118c1cf/approve | Admin Approve Vendor
+[2026-10-28T05:00:11.811Z] FAIL [403 expected 200] (18ms) - GET http://localhost:8080/api/v1/users/internal/vendors/aab65b38-e12e-45d5-ad0e-a458cdd94108/status | Verify Vendor Status Internal | Body: {"success":false,"message":"Access Forbidden: Direct access to internal endpoints is blocked."}
+[2026-10-28T05:00:12.408Z] PASS [201] (596ms) - POST http://localhost:8080/api/v1/products/vendor?publish=true | Vendor Create Digital Product
+[2026-10-28T05:00:12.409Z]     Created Digital Product ID: dc6659ed-aa89-4e6c-aebd-7fd08f25b68b, Price: ₹149, Status: PUBLISHED
+[2026-10-28T05:00:12.815Z] PASS [200] (405ms) - GET http://localhost:8080/api/v1/products/vendor/my-products | Vendor Get My Products
+[2026-10-28T05:00:12.880Z] PASS [200] (64ms) - GET http://localhost:8080/api/v1/payments/vendor/earnings | Vendor Check Initial Earnings
+[2026-10-28T05:00:12.902Z] PASS [200] (22ms) - GET http://localhost:8080/api/v1/payments/vendor/ledger | Vendor Check Initial Ledger
+[2026-10-28T05:00:12.903Z] 
+>>> [SECTION 4] CUSTOMER WORKFLOW: PROFILE, CATALOG, CART, CHECKOUT, PAYMENT & FULFILLMENT
+[2026-10-28T05:00:13.522Z] PASS [200] (618ms) - POST http://localhost:8080/api/v1/auth/register | Customer Registration
+[2026-10-28T05:00:14.140Z] PASS [200] (617ms) - POST http://localhost:8080/api/v1/auth/login | Customer Login
+[2026-10-28T05:00:14.141Z]     Authenticated Customer ID: f47b5097-9958-4acb-8383-3b61308a73e6, Email: customer_1793163607230@bytevault.com
+[2026-10-28T05:00:14.163Z] PASS [200] (22ms) - GET http://localhost:8080/api/v1/users/me | Get Customer Profile
+[2026-10-28T05:00:14.188Z] PASS [200] (24ms) - PUT http://localhost:8080/api/v1/users/me | Update Customer Profile
+[2026-10-28T05:00:14.269Z] FAIL [500 expected 200/201] (80ms) - POST http://localhost:8080/api/v1/users/me/addresses | Add Customer Address | Body: {"success":false,"message":"An unexpected internal error occurred: could not execute statement [ERROR: null value in column \"address_line1\" of relation \"user_addresses\" violates not-null constraint\n  Detail: Failing row contains (7a8f31e0-21a5-42cb-80ca-8df9246bb569, 2026-10-28 10:30:14.209706, null, 2026-10-28 10:30:14.209706, 0, null, null, Bangalore, India, f, null, Karnataka, f5800d2b-7a5a-4169-a2d2-66eea3848627).] [insert into user_addresses (address_line1,address_line2,city,country,created_at,deleted_at,is_default,postal_code,state,updated_at,user_profile_id,version,id) values (?,?,?,?,?,?,?,?,?,?,?,?,?)]; SQL [insert into user_addresses (address_line1,address_line2,city,country,created_at,deleted_at,is_default,postal_code,state,updated_at,user_profile_id,version,id) values (?,?,?,?,?,?,?,?,?,?,?,?,?)]; constraint [address_line1\" of relation \"user_addresses]","timestamp":"2026-10-28T10:30:14.2636534","status":500}
+[2026-10-28T05:00:14.308Z] PASS [200] (38ms) - GET http://localhost:8080/api/v1/users/me/addresses | Get Customer Addresses
+[2026-10-28T05:00:14.887Z] PASS [200] (578ms) - GET http://localhost:8080/api/v1/products | Get All Products Catalog
+[2026-10-28T05:00:14.928Z] PASS [200] (39ms) - GET http://localhost:8080/api/v1/categories | Get Categories
+[2026-10-28T05:00:14.952Z] PASS [200] (24ms) - GET http://localhost:8080/api/v1/products/dc6659ed-aa89-4e6c-aebd-7fd08f25b68b | Get Single Product Details
+[2026-10-28T05:00:15.293Z] PASS [200] (341ms) - GET http://localhost:8080/api/v1/cart | Get Initial Empty Cart
+[2026-10-28T05:00:15.932Z] PASS [200] (638ms) - POST http://localhost:8080/api/v1/cart/items | Add Item to Cart
+[2026-10-28T05:00:15.988Z] FAIL [400 expected 200] (55ms) - PUT http://localhost:8080/api/v1/cart/items/dc6659ed-aa89-4e6c-aebd-7fd08f25b68b?quantity=2 | Update Cart Item Quantity | Body: {"success":false,"message":"Digital products cannot have a quantity greater than 1.","timestamp":"2026-10-28T10:30:15.9854405","status":400}
+[2026-10-28T05:00:16.012Z] PASS [200] (23ms) - GET http://localhost:8080/api/v1/cart | Get Cart After Update
+[2026-10-28T05:00:16.838Z] PASS [200] (825ms) - POST http://localhost:8080/api/v1/orders | Place Customer Order
+[2026-10-28T05:00:16.839Z]     Placed Order ID: e8f9bfa9-58b2-431e-8026-f21ff641e6d4, Total Amount: ₹149
+[2026-10-28T05:00:16.894Z] PASS [200] (55ms) - GET http://localhost:8080/api/v1/orders/e8f9bfa9-58b2-431e-8026-f21ff641e6d4 | Get Placed Order By ID
+[2026-10-28T05:00:16.922Z] PASS [200] (27ms) - GET http://localhost:8080/api/v1/orders/my-orders | Get Customer Order History
+[2026-10-28T05:00:17.102Z] PASS [200] (179ms) - POST http://localhost:8080/api/v1/payments/create-order | Create Payment Order
+[2026-10-28T05:00:18.021Z] PASS [200] (918ms) - POST http://localhost:8080/api/v1/payments/verify | Verify Payment & Trigger Fulfillment
+[2026-10-28T05:00:18.043Z] PASS [200] (21ms) - GET http://localhost:8080/api/v1/payments/my-transactions | Get Customer Payment Transactions
+[2026-10-28T05:00:18.390Z] PASS [200] (346ms) - GET http://localhost:8080/api/v1/fulfillments/my-entitlements | Get Customer Active Entitlements
+[2026-10-28T05:00:18.391Z]     Entitlement Granted! ID: fc8cc039-937d-4aa5-8eae-24bacbfbd9e4, Status: ACTIVE
+[2026-10-28T05:00:18.463Z] PASS [200] (72ms) - GET http://localhost:8080/api/v1/downloads/dc6659ed-aa89-4e6c-aebd-7fd08f25b68b | Get Secure Download URL for Digital Asset
+[2026-10-28T05:00:18.464Z]     Generated Secure Signed Download URL: http://localhost:8080/api/v1/products/assets/download?key=assets/springboot-cloud-masterclass-1793163607230.zip&expires=1793164518426&signature=a0807f0ff2f09b4473d9a59870097d983ea098203993afe360403fa8734153eb
+[2026-10-28T05:00:18.500Z] PASS [200] (35ms) - GET http://localhost:8080/api/v1/products/assets/download?key=assets/springboot-cloud-masterclass-1793163607230.zip&expires=1793164518426&signature=a0807f0ff2f09b4473d9a59870097d983ea098203993afe360403fa8734153eb | Download Actual Asset Binary Stream
+[2026-10-28T05:00:18.500Z]     Streamed Asset Content Successfully: 156 bytes received!
+[2026-10-28T05:00:18.501Z] 
+>>> [SECTION 5] VENDOR POST-SALE AUDIT: EARNINGS, SALES BREAKDOWN & LEDGER
+[2026-10-28T05:00:18.536Z] PASS [200] (35ms) - GET http://localhost:8080/api/v1/orders/vendor/my-sales | Vendor Sales Breakdown After Customer Order
+[2026-10-28T05:00:18.558Z] PASS [200] (21ms) - GET http://localhost:8080/api/v1/payments/vendor/earnings | Vendor Earnings After Payment
+[2026-10-28T05:00:18.577Z] PASS [200] (18ms) - GET http://localhost:8080/api/v1/payments/vendor/ledger | Vendor Ledger Credit Verification
+[2026-10-28T05:00:18.578Z] 
+>>> [SECTION 6] ADMIN WORKFLOW: GOVERNANCE, AUDIT, REVOCATION & DISCOVERY
+[2026-10-28T05:00:18.617Z] PASS [200] (38ms) - GET http://localhost:8080/api/v1/users/admin/vendors | Admin Get All Vendors
+[2026-10-28T05:00:18.649Z] PASS [200] (31ms) - GET http://localhost:8080/api/v1/users/admin/vendors/pending | Admin Get Pending Vendors
+[2026-10-28T05:00:18.701Z] PASS [200] (52ms) - GET http://localhost:8080/api/v1/products/admin/all | Admin Get All Platform Products
+[2026-10-28T05:00:18.734Z] FAIL [500 expected 200] (32ms) - PATCH http://localhost:8080/api/v1/products/dc6659ed-aa89-4e6c-aebd-7fd08f25b68b/status?status=INACTIVE | Admin Toggle Product Status (ACTIVE -> INACTIVE) | Body: {"success":false,"message":"An unexpected internal error occurred: Failed to convert value of type 'java.lang.String' to required type 'com.bytevault.product.entity.ProductStatus'; Failed to convert from type [java.lang.String] to type [@org.springframework.web.bind.annotation.RequestParam com.bytevault.product.entity.ProductStatus] for value [INACTIVE]","timestamp":"2026-10-28T10:30:18.7317615","status":500}
+[2026-10-28T05:00:18.768Z] FAIL [500 expected 200] (33ms) - PATCH http://localhost:8080/api/v1/products/dc6659ed-aa89-4e6c-aebd-7fd08f25b68b/status?status=ACTIVE | Admin Toggle Product Status Back (INACTIVE -> ACTIVE) | Body: {"success":false,"message":"An unexpected internal error occurred: Failed to convert value of type 'java.lang.String' to required type 'com.bytevault.product.entity.ProductStatus'; Failed to convert from type [java.lang.String] to type [@org.springframework.web.bind.annotation.RequestParam com.bytevault.product.entity.ProductStatus] for value [ACTIVE]","timestamp":"2026-10-28T10:30:18.7635918","status":500}
+[2026-10-28T05:00:18.878Z] PASS [200] (110ms) - GET http://localhost:8080/api/v1/orders/admin | Admin View All Platform Orders
+[2026-10-28T05:00:18.915Z] FAIL [400 expected 200] (36ms) - PUT http://localhost:8080/api/v1/orders/e8f9bfa9-58b2-431e-8026-f21ff641e6d4/status?status=COMPLETED | Admin Update Order Status | Body: {"success":false,"message":"Illegal order status transition from PAID to COMPLETED","timestamp":"2026-10-28T10:30:18.9118586","status":400}
+[2026-10-28T05:00:18.933Z] PASS [200] (18ms) - GET http://localhost:8080/api/v1/entitlements | Admin Audit All Entitlements
+[2026-10-28T05:00:18.979Z] PASS [200] (44ms) - GET http://localhost:8080/api/v1/payments/admin/all | Admin Audit All Payments
+[2026-10-28T05:00:18.979Z] 
+>>> [SECURITY TEST] Administrative Entitlement Revocation (ID: fc8cc039-937d-4aa5-8eae-24bacbfbd9e4)
+[2026-10-28T05:00:19.020Z] PASS [200] (40ms) - POST http://localhost:8080/api/v1/fulfillments/entitlements/fc8cc039-937d-4aa5-8eae-24bacbfbd9e4/revoke | Admin Revoke Entitlement
+[2026-10-28T05:00:19.021Z] >>> [SECURITY TEST] Verifying Download Access is BLOCKED for Revoked Entitlement
+[2026-10-28T05:00:19.047Z] PASS [400] (25ms) - GET http://localhost:8080/api/v1/downloads/dc6659ed-aa89-4e6c-aebd-7fd08f25b68b | Customer Download Blocked Post-Revocation
+[2026-10-28T05:00:19.048Z] 
+>>> [SECTION 7] LOAD BALANCER DUAL-INSTANCE CHECK (10 Requests to /api/v1/products)
+[2026-10-28T05:00:19.454Z] PASS [200] (405ms) - GET http://localhost:8080/api/v1/products | Load Balancer Request #1
+[2026-10-28T05:00:19.566Z] PASS [200] (111ms) - GET http://localhost:8080/api/v1/products | Load Balancer Request #2
+[2026-10-28T05:00:19.607Z] PASS [200] (41ms) - GET http://localhost:8080/api/v1/products | Load Balancer Request #3
+[2026-10-28T05:00:19.639Z] PASS [200] (30ms) - GET http://localhost:8080/api/v1/products | Load Balancer Request #4
+[2026-10-28T05:00:19.685Z] PASS [200] (45ms) - GET http://localhost:8080/api/v1/products | Load Balancer Request #5
+[2026-10-28T05:00:19.712Z] PASS [200] (26ms) - GET http://localhost:8080/api/v1/products | Load Balancer Request #6
+[2026-10-28T05:00:19.743Z] PASS [200] (30ms) - GET http://localhost:8080/api/v1/products | Load Balancer Request #7
+[2026-10-28T05:00:19.769Z] PASS [200] (25ms) - GET http://localhost:8080/api/v1/products | Load Balancer Request #8
+[2026-10-28T05:00:19.797Z] PASS [200] (27ms) - GET http://localhost:8080/api/v1/products | Load Balancer Request #9
+[2026-10-28T05:00:19.826Z] PASS [200] (28ms) - GET http://localhost:8080/api/v1/products | Load Balancer Request #10
+[2026-10-28T05:00:19.827Z] 
+========================================================================================
+[2026-10-28T05:00:19.827Z]   TEST EXECUTION SUMMARY
+[2026-10-28T05:00:19.828Z]   Total Endpoints Tested: 65
+[2026-10-28T05:00:19.828Z]   Passed:                 59 (91%)
+[2026-10-28T05:00:19.829Z]   Failed:                 6
+[2026-10-28T05:00:19.829Z]   Evidence Saved To:      D:\ProductManagementSystem\docs\evidence\full-swagger-and-workflows-1793163607229.log
+[2026-10-28T05:00:19.829Z] ========================================================================================
+

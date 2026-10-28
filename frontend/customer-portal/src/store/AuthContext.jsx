@@ -14,6 +14,7 @@ export const AuthProvider = ({ children }) => {
   // Decodes JWT payload for immediate state restoration
   const parseJwt = (jwtToken) => {
     try {
+      if (!jwtToken) return null;
       const base64Url = jwtToken.split('.')[1];
       const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
       const jsonPayload = decodeURIComponent(
@@ -26,6 +27,35 @@ export const AuthProvider = ({ children }) => {
     } catch {
       return null;
     }
+  };
+
+  // Extracts authoritative user object from backend response and JWT claims
+  const extractUser = (res, fallbackToken) => {
+    if (!res && !fallbackToken) return null;
+    const token = res?.token || fallbackToken || localStorage.getItem("bytevault_auth_token");
+    const payload = token ? parseJwt(token) : null;
+
+    let role = res?.role;
+    if (!role && payload) {
+      if (Array.isArray(payload.roles) && payload.roles.length > 0) {
+        role = payload.roles[0].replace(/^ROLE_/, '');
+      } else if (payload.role) {
+        role = String(payload.role).replace(/^ROLE_/, '');
+      }
+    }
+    role = role || "CUSTOMER";
+
+    const userSrc = (res?.user && typeof res.user === "object") ? res.user : (res || {});
+
+    return {
+      id: userSrc.userId || userSrc.id || payload?.sub || payload?.id || payload?.userId,
+      userId: userSrc.userId || userSrc.id || payload?.sub || payload?.id || payload?.userId,
+      email: userSrc.email || payload?.email || payload?.sub,
+      name: userSrc.fullName || userSrc.name || payload?.name || userSrc.email || "User",
+      fullName: userSrc.fullName || userSrc.name || payload?.name || userSrc.email || "User",
+      role: role,
+      storeName: userSrc.storeName || payload?.storeName
+    };
   };
 
   // Logs out the user session and cleans up user artifacts
@@ -72,16 +102,7 @@ export const AuthProvider = ({ children }) => {
         } catch {}
       }
       if (!initialUser) {
-        const payload = parseJwt(storedToken);
-        if (payload) {
-          const role = Array.isArray(payload.roles) ? (payload.roles[0]?.replace('ROLE_', '') || "CUSTOMER") : (payload.role || "CUSTOMER");
-          initialUser = {
-            id: payload.sub || payload.id || payload.userId,
-            email: payload.email || payload.sub,
-            name: payload.name || payload.email || "User",
-            role: role
-          };
-        }
+        initialUser = extractUser(null, storedToken);
       }
       if (initialUser) {
         setUser(initialUser);
@@ -91,8 +112,15 @@ export const AuthProvider = ({ children }) => {
       try {
         const profile = await apiClient.get("/users/me");
         if (profile) {
-          setUser(profile);
-          localStorage.setItem("bytevault_user", JSON.stringify(profile));
+          const mergedUser = {
+            ...(initialUser || {}),
+            ...profile,
+            id: profile.userId || profile.id || initialUser?.id,
+            name: profile.fullName || initialUser?.name || "User",
+            role: initialUser?.role || profile.role || "CUSTOMER"
+          };
+          setUser(mergedUser);
+          localStorage.setItem("bytevault_user", JSON.stringify(mergedUser));
         }
       } catch (err) {
         console.warn("Session verification warning on startup:", err?.message || err);
@@ -103,7 +131,6 @@ export const AuthProvider = ({ children }) => {
             logout();
           }
         }
-        // Do not logout for other network drops; keep restored JWT user
       }
     }
     setLoading(false);
@@ -113,7 +140,9 @@ export const AuthProvider = ({ children }) => {
   const refreshSession = async () => {
     try {
       const storedRefresh = localStorage.getItem("bytevault_refresh_token");
+      if (!storedRefresh) throw new Error("No refresh token available");
       const res = await authService.refresh(storedRefresh);
+      const userObj = extractUser(res, res?.token) || user;
       if (res?.token) {
         setToken(res.token);
         localStorage.setItem("bytevault_auth_token", res.token);
@@ -121,11 +150,11 @@ export const AuthProvider = ({ children }) => {
       if (res?.refreshToken) {
         localStorage.setItem("bytevault_refresh_token", res.refreshToken);
       }
-      if (res?.user) {
-        setUser(res.user);
-        localStorage.setItem("bytevault_user", JSON.stringify(res.user));
+      if (userObj) {
+        setUser(userObj);
+        localStorage.setItem("bytevault_user", JSON.stringify(userObj));
       }
-      return res?.user || user;
+      return userObj;
     } catch (err) {
       console.error("Token session refresh failure", err);
       logout();
@@ -151,13 +180,14 @@ export const AuthProvider = ({ children }) => {
     setLoading(true);
     try {
       const res = await authService.login(email, password);
-      setUser(res.user);
-      setToken(res.token);
-      if (res.token) localStorage.setItem("bytevault_auth_token", res.token);
-      if (res.refreshToken) localStorage.setItem("bytevault_refresh_token", res.refreshToken);
-      if (res.user) localStorage.setItem("bytevault_user", JSON.stringify(res.user));
+      const userObj = extractUser(res, res?.token);
+      setUser(userObj);
+      setToken(res?.token || null);
+      if (res?.token) localStorage.setItem("bytevault_auth_token", res.token);
+      if (res?.refreshToken) localStorage.setItem("bytevault_refresh_token", res.refreshToken);
+      if (userObj) localStorage.setItem("bytevault_user", JSON.stringify(userObj));
       setLoading(false);
-      return res.user;
+      return userObj;
     } catch (err) {
       setLoading(false);
       setError(err.message || "Login failed.");
@@ -173,16 +203,17 @@ export const AuthProvider = ({ children }) => {
       if (typeof nameOrPayload === "object") {
         payload = nameOrPayload;
       } else {
-        payload = { name: nameOrPayload, email, password, role, ...vendorData };
+        payload = { name: nameOrPayload, fullName: nameOrPayload, email, password, role, ...vendorData };
       }
       const res = await authService.register(payload);
-      setUser(res.user);
-      setToken(res.token);
-      if (res.token) localStorage.setItem("bytevault_auth_token", res.token);
-      if (res.refreshToken) localStorage.setItem("bytevault_refresh_token", res.refreshToken);
-      if (res.user) localStorage.setItem("bytevault_user", JSON.stringify(res.user));
+      const userObj = extractUser(res, res?.token);
+      setUser(userObj);
+      setToken(res?.token || null);
+      if (res?.token) localStorage.setItem("bytevault_auth_token", res.token);
+      if (res?.refreshToken) localStorage.setItem("bytevault_refresh_token", res.refreshToken);
+      if (userObj) localStorage.setItem("bytevault_user", JSON.stringify(userObj));
       setLoading(false);
-      return res.user;
+      return userObj;
     } catch (err) {
       setLoading(false);
       setError(err.message || "Registration failed.");

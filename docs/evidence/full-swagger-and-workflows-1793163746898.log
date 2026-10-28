@@ -1,0 +1,107 @@
+[2026-10-28T05:02:26.899Z] ========================================================================================
+[2026-10-28T05:02:26.905Z]   BYTEVAULT MEDIA - COMPLETE SWAGGER & MULTI-ROLE (VENDOR, CUSTOMER, ADMIN) WORKFLOW AUDIT
+[2026-10-28T05:02:26.906Z]   Timestamp: 2026-10-28T05:02:26.906Z
+[2026-10-28T05:02:26.906Z]   Target: API Gateway [http://localhost:8080]
+[2026-10-28T05:02:26.907Z] ========================================================================================
+
+[2026-10-28T05:02:26.908Z] 
+>>> [SECTION 1] VERIFYING SWAGGER UI & OPENAPI SPECS ACROSS ALL SERVICES
+[2026-10-28T05:02:26.962Z] PASS [302] (51ms) - GET http://localhost:8080/swagger-ui.html | Gateway Swagger UI
+[2026-10-28T05:02:26.995Z] PASS [200] (31ms) - GET http://localhost:8080/v3/api-docs/identity-service | Identity Service OpenAPI Spec
+[2026-10-28T05:02:27.017Z] PASS [200] (21ms) - GET http://localhost:8080/v3/api-docs/product-service | Product Service OpenAPI Spec
+[2026-10-28T05:02:27.043Z] PASS [200] (25ms) - GET http://localhost:8080/v3/api-docs/order-service | Order Service OpenAPI Spec
+[2026-10-28T05:02:27.059Z] PASS [200] (14ms) - GET http://localhost:8080/v3/api-docs/cart-service | Cart Service OpenAPI Spec
+[2026-10-28T05:02:27.084Z] PASS [200] (24ms) - GET http://localhost:8080/v3/api-docs/payment-service | Payment Service OpenAPI Spec
+[2026-10-28T05:02:27.106Z] PASS [200] (21ms) - GET http://localhost:8080/v3/api-docs/fulfillment-service | Fulfillment Service OpenAPI Spec
+[2026-10-28T05:02:27.134Z] PASS [200] (27ms) - GET http://localhost:8080/v3/api-docs/notification-service | Notification Service OpenAPI Spec
+[2026-10-28T05:02:27.135Z] 
+>>> [SECTION 2] ADMIN AUTHENTICATION & INITIALIZATION
+[2026-10-28T05:02:27.725Z] PASS [200] (589ms) - POST http://localhost:8080/api/v1/auth/login | Admin Login
+[2026-10-28T05:02:27.725Z]     Authenticated Admin ID: e066e612-1df9-4fc3-9946-65cb0db99d9a, Role: ADMIN
+[2026-10-28T05:02:27.726Z] 
+>>> [SECTION 3] VENDOR WORKFLOW: REGISTRATION, APPROVAL, PRODUCTS & LEDGER
+[2026-10-28T05:02:28.381Z] PASS [200] (655ms) - POST http://localhost:8080/api/v1/auth/register | Vendor Registration
+[2026-10-28T05:02:28.977Z] PASS [200] (595ms) - POST http://localhost:8080/api/v1/auth/login | Vendor Login
+[2026-10-28T05:02:28.978Z]     Authenticated Vendor ID: 78c34b65-5ef7-4a7b-bf24-b4c562239387, Email: vendor_lab_1793163746899@bytevault.com
+[2026-10-28T05:02:28.995Z] PASS [200] (16ms) - GET http://localhost:8080/api/v1/users/me/vendor-profile | Get Vendor Profile
+[2026-10-28T05:02:29.017Z] PASS [200] (22ms) - PUT http://localhost:8080/api/v1/users/me/vendor-profile | Update Vendor Profile Details
+[2026-10-28T05:02:29.034Z] PASS [200] (16ms) - POST http://localhost:8080/api/v1/users/admin/vendors/8703ef21-1a22-4a9e-9b0b-4a26ab28aada/approve | Admin Approve Vendor
+[2026-10-28T05:02:29.038Z] PASS [403] (3ms) - GET http://localhost:8080/api/v1/users/internal/vendors/78c34b65-5ef7-4a7b-bf24-b4c562239387/status | Gateway Guard: External call to /internal/ is blocked
+[2026-10-28T05:02:29.108Z] PASS [201] (69ms) - POST http://localhost:8080/api/v1/products/vendor?publish=true | Vendor Create Digital Product
+[2026-10-28T05:02:29.108Z]     Created Digital Product ID: b0b2c986-d5ca-4904-a6b1-f70ef6b33c0a, Price: ₹149, Status: PUBLISHED
+[2026-10-28T05:02:29.140Z] PASS [200] (31ms) - GET http://localhost:8080/api/v1/products/vendor/my-products | Vendor Get My Products
+[2026-10-28T05:02:29.157Z] PASS [200] (16ms) - GET http://localhost:8080/api/v1/payments/vendor/earnings | Vendor Check Initial Earnings
+[2026-10-28T05:02:29.174Z] PASS [200] (16ms) - GET http://localhost:8080/api/v1/payments/vendor/ledger | Vendor Check Initial Ledger
+[2026-10-28T05:02:29.175Z] 
+>>> [SECTION 4] CUSTOMER WORKFLOW: PROFILE, CATALOG, CART, CHECKOUT, PAYMENT & FULFILLMENT
+[2026-10-28T05:02:29.772Z] PASS [200] (597ms) - POST http://localhost:8080/api/v1/auth/register | Customer Registration
+[2026-10-28T05:02:30.359Z] PASS [200] (586ms) - POST http://localhost:8080/api/v1/auth/login | Customer Login
+[2026-10-28T05:02:30.360Z]     Authenticated Customer ID: 318d59d9-7f48-400f-9f92-549e3687149f, Email: customer_1793163746899@bytevault.com
+[2026-10-28T05:02:30.375Z] PASS [200] (14ms) - GET http://localhost:8080/api/v1/users/me | Get Customer Profile
+[2026-10-28T05:02:30.393Z] PASS [200] (18ms) - PUT http://localhost:8080/api/v1/users/me | Update Customer Profile
+[2026-10-28T05:02:30.417Z] PASS [200] (23ms) - POST http://localhost:8080/api/v1/users/me/addresses | Add Customer Address
+[2026-10-28T05:02:30.443Z] PASS [200] (25ms) - GET http://localhost:8080/api/v1/users/me/addresses | Get Customer Addresses
+[2026-10-28T05:02:30.762Z] PASS [200] (317ms) - GET http://localhost:8080/api/v1/products | Get All Products Catalog
+[2026-10-28T05:02:30.774Z] PASS [200] (12ms) - GET http://localhost:8080/api/v1/categories | Get Categories
+[2026-10-28T05:02:30.786Z] PASS [200] (11ms) - GET http://localhost:8080/api/v1/products/b0b2c986-d5ca-4904-a6b1-f70ef6b33c0a | Get Single Product Details
+[2026-10-28T05:02:30.804Z] PASS [200] (18ms) - GET http://localhost:8080/api/v1/cart | Get Initial Empty Cart
+[2026-10-28T05:02:30.844Z] PASS [200] (39ms) - POST http://localhost:8080/api/v1/cart/items | Add Item to Cart
+[2026-10-28T05:02:30.865Z] PASS [400] (20ms) - PUT http://localhost:8080/api/v1/cart/items/b0b2c986-d5ca-4904-a6b1-f70ef6b33c0a?quantity=2 | Domain Rule Guard: Digital Product Quantity > 1 is Blocked
+[2026-10-28T05:02:30.888Z] PASS [200] (22ms) - PUT http://localhost:8080/api/v1/cart/items/b0b2c986-d5ca-4904-a6b1-f70ef6b33c0a?quantity=1 | Update Cart Item Quantity (Valid: 1)
+[2026-10-28T05:02:30.906Z] PASS [200] (18ms) - GET http://localhost:8080/api/v1/cart | Get Cart After Update
+[2026-10-28T05:02:30.947Z] PASS [200] (41ms) - POST http://localhost:8080/api/v1/orders | Place Customer Order
+[2026-10-28T05:02:30.948Z]     Placed Order ID: 1d84f9cb-caa5-4e2a-8924-e343fa4dc5fa, Total Amount: ₹149
+[2026-10-28T05:02:30.964Z] PASS [200] (16ms) - GET http://localhost:8080/api/v1/orders/1d84f9cb-caa5-4e2a-8924-e343fa4dc5fa | Get Placed Order By ID
+[2026-10-28T05:02:30.982Z] PASS [200] (17ms) - GET http://localhost:8080/api/v1/orders/my-orders | Get Customer Order History
+[2026-10-28T05:02:31.001Z] PASS [200] (19ms) - POST http://localhost:8080/api/v1/payments/create-order | Create Payment Order
+[2026-10-28T05:02:31.088Z] PASS [200] (87ms) - POST http://localhost:8080/api/v1/payments/verify | Verify Payment & Trigger Fulfillment
+[2026-10-28T05:02:31.104Z] PASS [200] (15ms) - GET http://localhost:8080/api/v1/payments/my-transactions | Get Customer Payment Transactions
+[2026-10-28T05:02:31.138Z] PASS [200] (33ms) - GET http://localhost:8080/api/v1/fulfillments/my-entitlements | Get Customer Active Entitlements
+[2026-10-28T05:02:31.139Z]     Entitlement Granted! ID: 19e20492-a946-4987-a0be-a12e26ad035c, Status: ACTIVE
+[2026-10-28T05:02:31.171Z] PASS [200] (32ms) - GET http://localhost:8080/api/v1/downloads/b0b2c986-d5ca-4904-a6b1-f70ef6b33c0a | Get Secure Download URL for Digital Asset
+[2026-10-28T05:02:31.172Z]     Generated Secure Signed Download URL: http://localhost:8080/api/v1/products/assets/download?key=assets/springboot-cloud-masterclass-1793163746899.zip&expires=1793164651160&signature=c9ed3162e21ff1208eeab74b2d396ffc06c894172c0c8cdba7e88bfa67a9a3e2
+[2026-10-28T05:02:31.202Z] PASS [200] (29ms) - GET http://localhost:8080/api/v1/products/assets/download?key=assets/springboot-cloud-masterclass-1793163746899.zip&expires=1793164651160&signature=c9ed3162e21ff1208eeab74b2d396ffc06c894172c0c8cdba7e88bfa67a9a3e2 | Download Actual Asset Binary Stream
+[2026-10-28T05:02:31.203Z]     Streamed Asset Content Successfully: 156 bytes received!
+[2026-10-28T05:02:31.203Z] 
+>>> [SECTION 5] VENDOR POST-SALE AUDIT: EARNINGS, SALES BREAKDOWN & LEDGER
+[2026-10-28T05:02:31.226Z] PASS [200] (21ms) - GET http://localhost:8080/api/v1/orders/vendor/my-sales | Vendor Sales Breakdown After Customer Order
+[2026-10-28T05:02:31.249Z] PASS [200] (22ms) - GET http://localhost:8080/api/v1/payments/vendor/earnings | Vendor Earnings After Payment
+[2026-10-28T05:02:31.267Z] PASS [200] (17ms) - GET http://localhost:8080/api/v1/payments/vendor/ledger | Vendor Ledger Credit Verification
+[2026-10-28T05:02:31.268Z] 
+>>> [SECTION 6] ADMIN WORKFLOW: GOVERNANCE, AUDIT, REVOCATION & DISCOVERY
+[2026-10-28T05:02:31.293Z] PASS [200] (24ms) - GET http://localhost:8080/api/v1/users/admin/vendors | Admin Get All Vendors
+[2026-10-28T05:02:31.310Z] PASS [200] (17ms) - GET http://localhost:8080/api/v1/users/admin/vendors/pending | Admin Get Pending Vendors
+[2026-10-28T05:02:31.336Z] PASS [200] (25ms) - GET http://localhost:8080/api/v1/products/admin/all | Admin Get All Platform Products
+[2026-10-28T05:02:31.435Z] PASS [200] (98ms) - PATCH http://localhost:8080/api/v1/products/b0b2c986-d5ca-4904-a6b1-f70ef6b33c0a/status?status=DEACTIVATED | Admin Toggle Product Status (PUBLISHED -> DEACTIVATED)
+[2026-10-28T05:02:31.465Z] PASS [200] (28ms) - PATCH http://localhost:8080/api/v1/products/b0b2c986-d5ca-4904-a6b1-f70ef6b33c0a/status?status=PUBLISHED | Admin Toggle Product Status Back (DEACTIVATED -> PUBLISHED)
+[2026-10-28T05:02:31.547Z] PASS [200] (81ms) - GET http://localhost:8080/api/v1/orders/admin | Admin View All Platform Orders
+[2026-10-28T05:02:31.567Z] PASS [200] (19ms) - PUT http://localhost:8080/api/v1/orders/1d84f9cb-caa5-4e2a-8924-e343fa4dc5fa/status?status=PROCESSING | Admin Transition Order Status (PAID -> PROCESSING)
+[2026-10-28T05:02:31.586Z] PASS [200] (19ms) - PUT http://localhost:8080/api/v1/orders/1d84f9cb-caa5-4e2a-8924-e343fa4dc5fa/status?status=FULFILLED | Admin Transition Order Status (PROCESSING -> FULFILLED)
+[2026-10-28T05:02:31.602Z] PASS [200] (14ms) - GET http://localhost:8080/api/v1/entitlements | Admin Audit All Entitlements
+[2026-10-28T05:02:31.636Z] PASS [200] (34ms) - GET http://localhost:8080/api/v1/payments/admin/all | Admin Audit All Payments
+[2026-10-28T05:02:31.637Z] 
+>>> [SECURITY TEST] Administrative Entitlement Revocation (ID: 19e20492-a946-4987-a0be-a12e26ad035c)
+[2026-10-28T05:02:31.655Z] PASS [200] (17ms) - POST http://localhost:8080/api/v1/fulfillments/entitlements/19e20492-a946-4987-a0be-a12e26ad035c/revoke | Admin Revoke Entitlement
+[2026-10-28T05:02:31.656Z] >>> [SECURITY TEST] Verifying Download Access is BLOCKED for Revoked Entitlement
+[2026-10-28T05:02:31.677Z] PASS [400] (21ms) - GET http://localhost:8080/api/v1/downloads/b0b2c986-d5ca-4904-a6b1-f70ef6b33c0a | Customer Download Blocked Post-Revocation
+[2026-10-28T05:02:31.678Z] 
+>>> [SECTION 7] LOAD BALANCER DUAL-INSTANCE CHECK (10 Requests to /api/v1/products)
+[2026-10-28T05:02:32.009Z] PASS [200] (331ms) - GET http://localhost:8080/api/v1/products | Load Balancer Request #1
+[2026-10-28T05:02:32.032Z] PASS [200] (21ms) - GET http://localhost:8080/api/v1/products | Load Balancer Request #2
+[2026-10-28T05:02:32.058Z] PASS [200] (25ms) - GET http://localhost:8080/api/v1/products | Load Balancer Request #3
+[2026-10-28T05:02:32.080Z] PASS [200] (22ms) - GET http://localhost:8080/api/v1/products | Load Balancer Request #4
+[2026-10-28T05:02:32.103Z] PASS [200] (23ms) - GET http://localhost:8080/api/v1/products | Load Balancer Request #5
+[2026-10-28T05:02:32.123Z] PASS [200] (19ms) - GET http://localhost:8080/api/v1/products | Load Balancer Request #6
+[2026-10-28T05:02:32.145Z] PASS [200] (20ms) - GET http://localhost:8080/api/v1/products | Load Balancer Request #7
+[2026-10-28T05:02:32.163Z] PASS [200] (18ms) - GET http://localhost:8080/api/v1/products | Load Balancer Request #8
+[2026-10-28T05:02:32.183Z] PASS [200] (19ms) - GET http://localhost:8080/api/v1/products | Load Balancer Request #9
+[2026-10-28T05:02:32.200Z] PASS [200] (16ms) - GET http://localhost:8080/api/v1/products | Load Balancer Request #10
+[2026-10-28T05:02:32.200Z] 
+========================================================================================
+[2026-10-28T05:02:32.201Z]   TEST EXECUTION SUMMARY
+[2026-10-28T05:02:32.201Z]   Total Endpoints Tested: 67
+[2026-10-28T05:02:32.202Z]   Passed:                 67 (100%)
+[2026-10-28T05:02:32.202Z]   Failed:                 0
+[2026-10-28T05:02:32.202Z]   Evidence Saved To:      D:\ProductManagementSystem\docs\evidence\full-swagger-and-workflows-1793163746898.log
+[2026-10-28T05:02:32.203Z] ========================================================================================
+

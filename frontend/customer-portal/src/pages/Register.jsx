@@ -171,8 +171,12 @@ export const Register = () => {
         supportEmail: supportEmail.trim() || email.trim()
       } : {};
 
-      await register(name, email, password, role, vendorData);
-      navigate("/", { replace: true });
+      const registeredUser = await register(name, email, password, role, vendorData);
+      let targetPath = "/account";
+      if (role === "VENDOR" || registeredUser?.role === "VENDOR") {
+        targetPath = "/vendor";
+      }
+      navigate(targetPath, { replace: true });
     } catch (err) {
       setFormError(err.message || "Registration failed. Please try again.");
     } finally {
