@@ -57,12 +57,16 @@ export const Login = () => {
   };
 
   const handleLoginSubmit = async (e) => {
-    e.preventDefault();
+    if (e && e.preventDefault) e.preventDefault();
+    if (!email || !email.trim() || !password) {
+      setFormError("Please enter both your email address and password.");
+      return;
+    }
     setLoading(true);
     setFormError(null);
 
     try {
-      const loggedUser = await login(email, password);
+      const loggedUser = await login(email.trim(), password);
       let targetPath = origin;
       if (!location.state?.from?.pathname || location.state?.from?.pathname === "/") {
         if (loggedUser?.role === "VENDOR") {
@@ -193,11 +197,11 @@ export const Login = () => {
                   Email Address
                 </label>
                 <input
+                  id="login-email-input"
                   type="email"
                   placeholder="customer@bytevault.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  required
                   style={{
                     width: "100%",
                     padding: "12px 14px",
@@ -221,11 +225,11 @@ export const Login = () => {
                   </Link>
                 </Box>
                 <input
+                  id="login-password-input"
                   type="password"
                   placeholder="••••••••"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  required
                   style={{
                     width: "100%",
                     padding: "12px 14px",
@@ -240,15 +244,17 @@ export const Login = () => {
               </div>
 
               <Button
+                id="login-submit-button"
                 variant="primary"
                 size="lg"
                 type="submit"
+                onClick={handleLoginSubmit}
                 state={loading ? "loading" : "default"}
-                disabled={loading || !email || !password}
+                disabled={loading}
                 fullWidth
                 rightIcon={<ArrowForwardIcon style={{ fontSize: "16px" }} />}
               >
-                Sign In to Platform
+                {loading ? "Authenticating..." : "Sign In to Platform"}
               </Button>
             </Box>
           </form>

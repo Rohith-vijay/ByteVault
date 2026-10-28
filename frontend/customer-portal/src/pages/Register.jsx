@@ -144,8 +144,23 @@ export const Register = () => {
   const [formError, setFormError] = useState(null);
 
   const handleRegisterSubmit = async (e) => {
-    e.preventDefault();
+    if (e && e.preventDefault) e.preventDefault();
     setFormError(null);
+
+    if (!name || !name.trim()) {
+      setFormError("Please enter your full name or organization name.");
+      return;
+    }
+
+    if (!email || !email.trim()) {
+      setFormError("Please enter a valid email address.");
+      return;
+    }
+
+    if (!password) {
+      setFormError("Please enter a password.");
+      return;
+    }
 
     if (password.length < 8) {
       setFormError("Password must be at least 8 characters long.");
@@ -171,7 +186,7 @@ export const Register = () => {
         supportEmail: supportEmail.trim() || email.trim()
       } : {};
 
-      const registeredUser = await register(name, email, password, role, vendorData);
+      const registeredUser = await register(name.trim(), email.trim(), password, role, vendorData);
       let targetPath = "/account";
       if (role === "VENDOR" || registeredUser?.role === "VENDOR") {
         targetPath = "/vendor";
@@ -309,44 +324,44 @@ export const Register = () => {
               <div>
                 <FieldLabel>Full Name / Organization</FieldLabel>
                 <InputField
+                  id="register-name-input"
                   type="text"
                   placeholder="Alex Rivera"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  required
                 />
               </div>
 
               <div>
                 <FieldLabel>Email Address</FieldLabel>
                 <InputField
+                  id="register-email-input"
                   type="email"
                   placeholder="alex.rivera@example.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  required
                 />
               </div>
 
               <div>
                 <FieldLabel>Password</FieldLabel>
                 <InputField
+                  id="register-password-input"
                   type="password"
                   placeholder="••••••••••••"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  required
                 />
               </div>
 
               <div>
                 <FieldLabel>Confirm Password</FieldLabel>
                 <InputField
+                  id="register-confirm-password-input"
                   type="password"
                   placeholder="••••••••••••"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
-                  required
                 />
               </div>
 
@@ -371,11 +386,11 @@ export const Register = () => {
                   <div>
                     <FieldLabel>Store / Brand Name *</FieldLabel>
                     <InputField
+                      id="register-store-name-input"
                       type="text"
                       placeholder="e.g. HyperScale Distributed Systems"
                       value={storeName}
                       onChange={(e) => setStoreName(e.target.value)}
-                      required={role === "VENDOR"}
                     />
                   </div>
 
@@ -425,14 +440,19 @@ export const Register = () => {
 
               <Box mt={2}>
                 <Button
+                  id="register-submit-button"
                   type="submit"
+                  onClick={handleRegisterSubmit}
                   variant="primary"
                   size="lg"
                   fullWidth
-                  loading={loading}
+                  state={loading ? "loading" : "default"}
+                  disabled={loading}
                   rightIcon={<ArrowForwardIcon style={{ fontSize: "16px" }} />}
                 >
-                  {role === "VENDOR" ? "Submit Vendor Application" : "Create Customer Account"}
+                  {loading 
+                    ? "Submitting Application..." 
+                    : (role === "VENDOR" ? "Submit Vendor Application" : "Create Customer Account")}
                 </Button>
               </Box>
 

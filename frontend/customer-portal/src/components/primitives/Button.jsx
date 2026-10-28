@@ -209,6 +209,15 @@ export const Button = React.forwardRef(
         aria-busy={state === "loading"}
         aria-live="polite"
         {...props}
+        onClick={(e) => {
+          if (disabled || state === "loading") {
+            e.preventDefault();
+            return;
+          }
+          if (props.onClick) {
+            props.onClick(e);
+          }
+        }}
       >
         {state === "loading" && (
           <SpinnerOverlay>

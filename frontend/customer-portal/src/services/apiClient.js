@@ -4,7 +4,7 @@
 import { mockProducts } from "../features/products/mockData";
 
 // Read configuration variables from Vite environment variables
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8080/api/v1";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || (typeof window !== "undefined" ? "/api/v1" : "http://localhost:8080/api/v1");
 const USE_MOCK_API = import.meta.env.VITE_USE_MOCK_API === "true"; // False by default, PostgreSQL backend is source of truth
 
 // ----------------------------------------------------
