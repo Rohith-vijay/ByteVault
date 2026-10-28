@@ -1,0 +1,221 @@
+{
+	"info": {
+		"_postman_id": "7f35492d-9e6b-4e12-8889-8dcf2f36d711",
+		"name": "ByteVault Media — Microservices Simplification & Verification Suite (v2)",
+		"description": "Comprehensive E2E Postman collection validating the 7 active microservices, Eureka discovery, Spring Cloud Gateway routing, perimeter security, and vendor write/read gates.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "01. Auth - Register Customer (200 OK)",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"email\": \"postman_customer_{{$randomInt}}@bytevault.com\",\n    \"password\": \"Password@123\",\n    \"fullName\": \"Postman Verified Customer\",\n    \"role\": \"CUSTOMER\"\n}"
+				},
+				"url": {
+					"raw": "http://localhost:8080/api/v1/auth/register",
+					"protocol": "http",
+					"host": ["localhost"],
+					"port": "8080",
+					"path": ["api", "v1", "auth", "register"]
+				}
+			}
+		},
+		{
+			"name": "02. Auth - Register Vendor (Creates PENDING vendor_profile)",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"email\": \"postman_vendor_{{$randomInt}}@bytevault.com\",\n    \"password\": \"Password@123\",\n    \"fullName\": \"Postman Store\",\n    \"role\": \"VENDOR\"\n}"
+				},
+				"url": {
+					"raw": "http://localhost:8080/api/v1/auth/register",
+					"protocol": "http",
+					"host": ["localhost"],
+					"port": "8080",
+					"path": ["api", "v1", "auth", "register"]
+				}
+			}
+		},
+		{
+			"name": "03. Auth - Login Customer & Acquire JWT",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"email\": \"testcustomer_310853476@bytevault.com\",\n    \"password\": \"Password@123\"\n}"
+				},
+				"url": {
+					"raw": "http://localhost:8080/api/v1/auth/login",
+					"protocol": "http",
+					"host": ["localhost"],
+					"port": "8080",
+					"path": ["api", "v1", "auth", "login"]
+				}
+			}
+		},
+		{
+			"name": "04. Product - Public Catalog Listing (Gateway Route)",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "http://localhost:8080/api/v1/products",
+					"protocol": "http",
+					"host": ["localhost"],
+					"port": "8080",
+					"path": ["api", "v1", "products"]
+				}
+			}
+		},
+		{
+			"name": "05. Security - Protected Route Missing Token (401 Expected)",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "http://localhost:8080/api/v1/users/me",
+					"protocol": "http",
+					"host": ["localhost"],
+					"port": "8080",
+					"path": ["api", "v1", "users", "me"]
+				}
+			}
+		},
+		{
+			"name": "06. Security - Direct Service Bypass without Secret (403 Expected)",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "http://localhost:8081/api/v1/users/me",
+					"protocol": "http",
+					"host": ["localhost"],
+					"port": "8081",
+					"path": ["api", "v1", "users", "me"]
+				}
+			}
+		},
+		{
+			"name": "07. Cart - Add Item to Persistent Cart",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					},
+					{
+						"key": "Authorization",
+						"value": "Bearer {{jwt_token}}"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"productId\": \"bcea9a84-25ce-4e46-a195-db7193a5ffb4\",\n    \"quantity\": 1\n}"
+				},
+				"url": {
+					"raw": "http://localhost:8080/api/v1/cart/items",
+					"protocol": "http",
+					"host": ["localhost"],
+					"port": "8080",
+					"path": ["api", "v1", "cart", "items"]
+				}
+			}
+		},
+		{
+			"name": "08. Order - Create Digital Order",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					},
+					{
+						"key": "Authorization",
+						"value": "Bearer {{jwt_token}}"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"items\": [\n        {\n            \"productId\": \"bcea9a84-25ce-4e46-a195-db7193a5ffb4\",\n            \"quantity\": 1\n        }\n    ],\n    \"customerName\": \"Test Customer\",\n    \"customerEmail\": \"testcustomer_310853476@bytevault.com\"\n}"
+				},
+				"url": {
+					"raw": "http://localhost:8080/api/v1/orders",
+					"protocol": "http",
+					"host": ["localhost"],
+					"port": "8080",
+					"path": ["api", "v1", "orders"]
+				}
+			}
+		},
+		{
+			"name": "09. Fulfillment - Query Digital Entitlements",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{jwt_token}}"
+					}
+				],
+				"url": {
+					"raw": "http://localhost:8080/api/v1/entitlements",
+					"protocol": "http",
+					"host": ["localhost"],
+					"port": "8080",
+					"path": ["api", "v1", "entitlements"]
+				}
+			}
+		},
+		{
+			"name": "10. Notification - Order Confirmation Dispatch",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					},
+					{
+						"key": "Authorization",
+						"value": "Bearer {{jwt_token}}"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"toEmail\": \"buyer@bytevault.com\",\n    \"customerName\": \"Test Customer\",\n    \"orderNumber\": \"ORD-TEST-1001\",\n    \"orderId\": \"{{order_id}}\",\n    \"totalAmount\": 29.99,\n    \"orderItems\": [\n        {\n            \"productName\": \"Cloud Architecture Handbook (PDF)\",\n            \"quantity\": 1,\n            \"price\": 29.99\n        }\n    ]\n}"
+				},
+				"url": {
+					"raw": "http://localhost:8080/api/v1/notifications/email/order-confirmation",
+					"protocol": "http",
+					"host": ["localhost"],
+					"port": "8080",
+					"path": ["api", "v1", "notifications", "email", "order-confirmation"]
+				}
+			}
+		}
+	]
+}

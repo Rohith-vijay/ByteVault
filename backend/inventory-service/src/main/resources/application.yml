@@ -7,7 +7,7 @@ spring:
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/inventory_db}
     username: ${DB_USER:postgres}
-    password: ${DB_PASSWORD:Rohith@358}
+    password: ${DB_PASSWORD:}
     driver-class-name: ${DB_DRIVER:org.postgresql.Driver}
   jpa:
     hibernate:
@@ -30,6 +30,9 @@ spring:
 
 eureka:
   client:
+    enabled: false
+    register-with-eureka: false
+    fetch-registry: false
     service-url:
       defaultZone: http://localhost:8761/eureka/
 

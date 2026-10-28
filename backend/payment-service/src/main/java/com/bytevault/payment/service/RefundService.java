@@ -9,13 +9,11 @@ import com.bytevault.payment.repository.PaymentTransactionRepository;
 import com.bytevault.payment.repository.RefundRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.Optional;
 
 @Slf4j
@@ -26,7 +24,10 @@ public class RefundService {
     private final RefundRepository refundRepository;
     private final PaymentTransactionRepository transactionRepository;
     private final OrderClient orderClient;
-    private final RabbitTemplate rabbitTemplate;
+    private final VendorLedgerService vendorLedgerService;
+
+    @Value("${app.gateway.secret:platform_default_gateway_shared_secret}")
+    private String gatewaySecret;
 
     @Transactional
     public RefundResponse processRefund(RefundRequest request) {
@@ -71,7 +72,9 @@ public class RefundService {
 
             isFullRefund = cumulativeRefund.compareTo(tx.getAmount()) == 0;
             tx.setStatus(isFullRefund ? "REFUNDED" : "PARTIALLY_REFUNDED");
-            transactionRepository.save(tx);
+            if (!isFullRefund) {
+                transactionRepository.save(tx);
+            }
         }
 
         Refund refund = Refund.builder()
@@ -85,27 +88,33 @@ public class RefundService {
 
         Refund saved = refundRepository.save(refund);
 
-        // Notify order service if fully refunded
-        if (isFullRefund) {
-            try {
-                orderClient.updateOrderStatus(request.getOrderId(), "CANCELLED");
-                log.info("[RefundService] Updated order-service status to CANCELLED for fully refunded order: {}", request.getOrderId());
-            } catch (Exception e) {
-                log.warn("[RefundService] Could not update order-service status via Feign: {}", e.getMessage());
-            }
+        // Adjust vendor ledger proportionally or in full
+        try {
+            vendorLedgerService.reverseTransactionForRefund(request.getOrderId(), request.getAmount(), isFullRefund);
+            log.info("[RefundService] Adjusted vendor ledger for refunded orderId={}, isFullRefund={}", request.getOrderId(), isFullRefund);
+        } catch (Exception e) {
+            log.error("[RefundService] Failed to reverse vendor ledger for orderId={}: {}", request.getOrderId(), e.getMessage());
         }
 
-        // Publish refund.completed event
-        try {
-            Map<String, Object> event = new HashMap<>();
-            event.put("refundId", saved.getId().toString());
-            event.put("orderId", saved.getOrderId().toString());
-            event.put("amount", saved.getAmount().toString());
-            event.put("status", saved.getStatus());
-            rabbitTemplate.convertAndSend("order.exchange", "refund.completed", event);
-            log.info("[RefundService] Published refund.completed event for refundId: {}", saved.getId());
-        } catch (Exception e) {
-            log.warn("[RefundService] Could not publish refund event: {}", e.getMessage());
+        // Notify order service if fully refunded (triggers order CANCELLED and entitlement revocation)
+        if (isFullRefund) {
+            try {
+                orderClient.refundCancel(request.getOrderId(), gatewaySecret, "ROLE_INTERNAL_SERVICE");
+                log.info("[RefundService] Notified order-service of refund-cancel for fully refunded order: {}", request.getOrderId());
+                if (optTx.isPresent()) {
+                    PaymentTransaction tx = optTx.get();
+                    tx.setOrderSyncStatus("REFUND_SYNCED");
+                    transactionRepository.save(tx);
+                }
+            } catch (Exception e) {
+                log.error("[RefundService] CRITICAL: Could not trigger refund-cancel on order-service via Feign for orderId={}: {}. Scheduled reconciler will retry.",
+                        request.getOrderId(), e.getMessage());
+                if (optTx.isPresent()) {
+                    PaymentTransaction tx = optTx.get();
+                    tx.setOrderSyncStatus("REFUND_PENDING");
+                    transactionRepository.save(tx);
+                }
+            }
         }
 
         return mapToResponse(saved);

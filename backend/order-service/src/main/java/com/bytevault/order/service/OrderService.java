@@ -3,15 +3,21 @@ package com.bytevault.order.service;
 import com.bytevault.common.exception.BadRequestException;
 import com.bytevault.common.exception.ResourceNotFoundException;
 import com.bytevault.order.client.ProductClient;
+import com.bytevault.order.client.FulfillmentRevokeClient;
 import com.bytevault.order.dto.*;
+import com.bytevault.common.dto.VendorBreakdownEntry;
 import com.bytevault.order.entity.Order;
 import com.bytevault.order.entity.OrderItem;
 import com.bytevault.order.entity.OrderStatus;
+import com.bytevault.common.client.NotificationClient;
+import com.bytevault.common.dto.notification.NotificationDto.OrderConfirmationEmailRequest;
+import com.bytevault.order.client.FulfillmentClient;
 import com.bytevault.order.entity.OrderType;
 import com.bytevault.order.repository.OrderRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,16 +37,32 @@ public class OrderService {
     private final com.fasterxml.jackson.databind.ObjectMapper objectMapper;
     private final ProductClient productClient;
     private final com.bytevault.order.client.InventoryClient inventoryClient;
-    private final RabbitTemplate rabbitTemplate;
 
-    @org.springframework.beans.factory.annotation.Autowired
-    private com.bytevault.order.client.FulfillmentClient fulfillmentClient;
+    @Autowired(required = false)
+    private FulfillmentClient fulfillmentClient;
 
-    public void setFulfillmentClient(com.bytevault.order.client.FulfillmentClient fulfillmentClient) {
+    @Autowired(required = false)
+    private FulfillmentRevokeClient fulfillmentRevokeClient;
+
+    @Autowired(required = false)
+    private NotificationClient notificationClient;
+
+    @Value("${app.physical-products.enabled:false}")
+    private boolean physicalProductsEnabled;
+
+    public void setFulfillmentClient(FulfillmentClient fulfillmentClient) {
         this.fulfillmentClient = fulfillmentClient;
     }
 
-    @org.springframework.beans.factory.annotation.Value("${app.gateway.secret:platform_default_gateway_shared_secret}")
+    public void setFulfillmentRevokeClient(FulfillmentRevokeClient fulfillmentRevokeClient) {
+        this.fulfillmentRevokeClient = fulfillmentRevokeClient;
+    }
+
+    public void setNotificationClient(NotificationClient notificationClient) {
+        this.notificationClient = notificationClient;
+    }
+
+    @Value("${app.gateway.secret:platform_default_gateway_shared_secret}")
     private String gatewaySecret;
 
     @Transactional
@@ -94,6 +116,9 @@ public class OrderService {
                 }
 
                 if (!isDigital) {
+                    if (!physicalProductsEnabled) {
+                        throw new BadRequestException("Physical product orders are not supported in this release. ByteVault Media is currently configured for digital assets only.");
+                    }
                     hasPhysical = true;
                     if (inventoryClient != null) {
                         try {
@@ -154,28 +179,6 @@ public class OrderService {
             Order savedOrder = orderRepository.save(order);
             log.info("[OrderService] Created order: id={}, orderNumber={}, totalAmount={}, type={}",
                     savedOrder.getId(), savedOrder.getOrderNumber(), savedOrder.getTotalAmount(), savedOrder.getOrderType());
-
-            // Publish OrderCreatedEvent to RabbitMQ
-            try {
-                Map<String, Object> event = new HashMap<>();
-                event.put("orderId", savedOrder.getId().toString());
-                event.put("orderNumber", savedOrder.getOrderNumber());
-                event.put("userId", savedOrder.getUserId().toString());
-                event.put("totalAmount", savedOrder.getTotalAmount().toString());
-                event.put("orderType", savedOrder.getOrderType().name());
-                event.put("customerEmail", savedOrder.getCustomerEmail());
-                event.put("customerName", savedOrder.getCustomerName());
-
-                List<String> productIds = savedOrder.getItems().stream()
-                        .map(i -> i.getProductId().toString())
-                        .collect(Collectors.toList());
-                event.put("productIds", productIds);
-
-                rabbitTemplate.convertAndSend("order.exchange", "order.created", event);
-                log.info("[OrderService] Published OrderCreatedEvent: orderId={}", savedOrder.getId());
-            } catch (Exception e) {
-                log.warn("[OrderService] Could not publish OrderCreatedEvent: {}", e.getMessage());
-            }
 
             return mapToResponse(savedOrder);
         } catch (Exception e) {
@@ -316,20 +319,20 @@ public class OrderService {
             String jsonPayload = objectMapper != null ? objectMapper.writeValueAsString(eventPayload) : new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(eventPayload);
 
             // Avoid duplicate outbox rows if an event already exists for this order
-            if (outboxEventRepository.findByAggregateIdAndEventType(orderId, "order.paid").isEmpty()) {
-                com.bytevault.order.entity.OutboxEvent outboxEvent = com.bytevault.order.entity.OutboxEvent.builder()
-                        .aggregateType("ORDER")
-                        .aggregateId(orderId)
-                        .eventType("order.paid")
-                        .payload(jsonPayload)
-                        .status(com.bytevault.order.entity.OutboxStatus.PENDING)
-                        .retryCount(0)
-                        .createdAt(java.time.LocalDateTime.now())
-                        .build();
-
-                outboxEventRepository.save(outboxEvent);
-                log.info("[OrderService] Transactional outbox event created atomically for orderId={}", orderId);
-            }
+            com.bytevault.order.entity.OutboxEvent outboxEvent = outboxEventRepository.findByAggregateIdAndEventType(orderId, "order.paid")
+                    .orElseGet(() -> {
+                        com.bytevault.order.entity.OutboxEvent newEvent = com.bytevault.order.entity.OutboxEvent.builder()
+                                .aggregateType("ORDER")
+                                .aggregateId(orderId)
+                                .eventType("order.paid")
+                                .payload(jsonPayload)
+                                .status(com.bytevault.order.entity.OutboxStatus.PENDING)
+                                .retryCount(0)
+                                .createdAt(java.time.LocalDateTime.now())
+                                .build();
+                        return outboxEventRepository.save(newEvent);
+                    });
+            log.info("[OrderService] Transactional outbox event ready for orderId={}", orderId);
 
             // Direct synchronous fulfillment dispatch for immediate customer entitlement (NO RabbitMQ dependency)
             List<UUID> digitalProductIds = savedOrder.getItems().stream()
@@ -345,9 +348,40 @@ public class OrderService {
                 try {
                     fulfillmentClient.fulfillOrderInternal(gatewaySecret, "ROLE_INTERNAL_SERVICE", savedOrder.getId(), savedOrder.getUserId(), digitalProductIds);
                     log.info("[OrderService] Immediate synchronous digital fulfillment succeeded for order {}", savedOrder.getId());
+                    if (outboxEvent != null) {
+                        outboxEvent.setStatus(com.bytevault.order.entity.OutboxStatus.PUBLISHED);
+                        outboxEvent.setPublishedAt(java.time.LocalDateTime.now());
+                        outboxEventRepository.save(outboxEvent);
+                    }
                 } catch (Exception ex) {
-                    log.error("[OrderService] CRITICAL: Synchronous digital fulfillment failed for order {}: {}", savedOrder.getId(), ex.getMessage(), ex);
-                    throw new RuntimeException("Digital product fulfillment failed for order " + savedOrder.getId() + ": " + ex.getMessage(), ex);
+                    log.warn("[OrderService] Immediate synchronous digital fulfillment failed for order {}: {}. Outbox event remains PENDING for automatic retry by OutboxPublisherService.", savedOrder.getId(), ex.getMessage());
+                    if (outboxEvent != null) {
+                        outboxEvent.setStatus(com.bytevault.order.entity.OutboxStatus.PENDING);
+                        outboxEvent.setLastError("Synchronous dispatch failed: " + ex.getMessage());
+                        outboxEventRepository.save(outboxEvent);
+                    }
+                }
+            } else if (outboxEvent != null) {
+                // Physical order or no digital items - outbox marked PUBLISHED
+                outboxEvent.setStatus(com.bytevault.order.entity.OutboxStatus.PUBLISHED);
+                outboxEvent.setPublishedAt(java.time.LocalDateTime.now());
+                outboxEventRepository.save(outboxEvent);
+            }
+
+            // Defensive notification dispatch
+            if (notificationClient != null && savedOrder.getCustomerEmail() != null) {
+                try {
+                    notificationClient.sendOrderConfirmationEmail(OrderConfirmationEmailRequest.builder()
+                            .toEmail(savedOrder.getCustomerEmail())
+                            .customerName(savedOrder.getCustomerName())
+                            .orderId(savedOrder.getId())
+                            .orderNumber(savedOrder.getOrderNumber())
+                            .totalAmount(savedOrder.getTotalAmount())
+                            .downloadLink(null)
+                            .build());
+                    log.info("[OrderService] Dispatched order confirmation notification for order {}", savedOrder.getId());
+                } catch (Exception notifEx) {
+                    log.warn("[OrderService] Notification dispatch failed (swallowed): {}", notifEx.getMessage());
                 }
             }
         } catch (Exception e) {
@@ -386,20 +420,100 @@ public class OrderService {
         Order updated = orderRepository.save(order);
         log.info("[OrderService] Order cancelled: orderId={}, cancelledBy={}, reason={}", orderId, userId, reason);
 
-        // Publish OrderCancelledEvent to RabbitMQ
-        try {
-            Map<String, Object> event = new HashMap<>();
-            event.put("orderId", updated.getId().toString());
-            event.put("orderNumber", updated.getOrderNumber());
-            event.put("userId", updated.getUserId().toString());
-            event.put("reason", reason != null ? reason : "Cancelled by user");
-            rabbitTemplate.convertAndSend("order.exchange", "order.cancelled", event);
-            log.info("[OrderService] Published OrderCancelledEvent: orderId={}", updated.getId());
-        } catch (Exception e) {
-            log.warn("[OrderService] Could not publish OrderCancelledEvent: {}", e.getMessage());
+        return mapToResponse(updated);
+    }
+
+    /**
+     * Internal: compute per-vendor gross subtotals for a given order.
+     * Gross = sum of order_item.subtotal per vendor_id.
+     * Shipping/tax are NOT attributed to vendors in this phase.
+     * Called by Payment Service after marking an order PAID, to populate VendorLedger.
+     */
+    @Transactional(readOnly = true)
+    public List<VendorBreakdownEntry> getVendorBreakdown(UUID orderId) {
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + orderId));
+
+        Map<UUID, BigDecimal> totals = new LinkedHashMap<>();
+        for (OrderItem item : order.getItems()) {
+            if (item.getVendorId() == null) continue;
+            BigDecimal sub = item.getSubtotal() != null
+                    ? item.getSubtotal()
+                    : item.getUnitPrice().multiply(BigDecimal.valueOf(item.getQuantity()));
+            totals.merge(item.getVendorId(), sub, BigDecimal::add);
         }
 
-        return mapToResponse(updated);
+        return totals.entrySet().stream()
+                .map(e -> VendorBreakdownEntry.builder()
+                        .vendorId(e.getKey())
+                        .grossSubtotal(e.getValue())
+                        .build())
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * Internal: apply a refund-driven CANCELLED transition.
+     * Secured externally (gateway-secret + internal role check in controller).
+     * On success: sets order status to CANCELLED and calls Fulfillment to revoke entitlements.
+     * Idempotent: already-cancelled orders return without error.
+     */
+    @Transactional
+    public OrderResponse applyRefundCancel(UUID orderId) {
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + orderId));
+
+        if (order.getStatus() == OrderStatus.CANCELLED) {
+            log.info("[OrderService] applyRefundCancel: order {} already CANCELLED (idempotent)", orderId);
+            return mapToResponse(order);
+        }
+
+        OrderStatus current = order.getStatus();
+        boolean cancellable = current == OrderStatus.PAID
+                || current == OrderStatus.FULFILLED
+                || current == OrderStatus.PROCESSING
+                || current == OrderStatus.READY_FOR_FULFILLMENT
+                || current == OrderStatus.PENDING
+                || current == OrderStatus.PAYMENT_PENDING;
+        if (!cancellable) {
+            throw new BadRequestException("Cannot apply refund-cancel to order in status: " + current);
+        }
+
+        order.setStatus(OrderStatus.CANCELLED);
+        Order saved = orderRepository.save(order);
+        log.info("[OrderService] Order {} moved to CANCELLED via refund path", orderId);
+
+        // Revoke digital entitlements — best-effort, must not fail the cancel transition
+        if (fulfillmentRevokeClient != null) {
+            try {
+                fulfillmentRevokeClient.revokeEntitlementsByOrder(orderId);
+                log.info("[OrderService] Entitlement revocation triggered for orderId={}", orderId);
+            } catch (Exception e) {
+                log.error("[OrderService] Entitlement revocation failed for orderId={} (refund applied; revoke must be retried manually): {}",
+                        orderId, e.getMessage());
+            }
+        }
+
+        return mapToResponse(saved);
+    }
+
+    /**
+     * Internal: apply a payment-failure transition to move order to FAILED.
+     * Prevents orders from remaining stuck in PENDING indefinitely.
+     */
+    @Transactional
+    public OrderResponse markOrderFailed(UUID orderId, String reason) {
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + orderId));
+
+        if (order.getStatus() == OrderStatus.FAILED || order.getStatus() == OrderStatus.CANCELLED) {
+            log.info("[OrderService] markOrderFailed: order {} already in terminal state {}", orderId, order.getStatus());
+            return mapToResponse(order);
+        }
+
+        order.setStatus(OrderStatus.FAILED);
+        Order saved = orderRepository.save(order);
+        log.info("[OrderService] Order {} moved to FAILED via payment failure path. Reason: {}", orderId, reason);
+        return mapToResponse(saved);
     }
 
     private boolean isValidStatusTransition(OrderStatus from, OrderStatus to) {
@@ -437,8 +551,8 @@ public class OrderService {
                 .id(o.getId())
                 .orderNumber(o.getOrderNumber())
                 .userId(o.getUserId())
-                .status(o.getStatus().name())
-                .orderType(o.getOrderType().name())
+                .status(o.getStatus() != null ? o.getStatus().name() : OrderStatus.PENDING.name())
+                .orderType(o.getOrderType() != null ? o.getOrderType().name() : OrderType.DIGITAL.name())
                 .totalAmount(o.getTotalAmount())
                 .customerEmail(o.getCustomerEmail())
                 .customerName(o.getCustomerName())

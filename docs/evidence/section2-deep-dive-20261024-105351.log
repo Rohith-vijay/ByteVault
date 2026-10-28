@@ -1,0 +1,33 @@
+﻿=================================================================
+ByteVault Media - Section 2 Deep-Dive Gap Matrix Suite (20261024-105351)
+=================================================================
+
+--- [TEST 1] 100 Requests to GET /api/v1/products (Through Gateway) ---
+Total Requests: 100, Successful: 100 (Success Rate: 100%)
+Latency Stats: Median = 21 ms, Max = 61 ms, Average = 22.04 ms
+
+--- [TEST 2] Product Service Dual-Instance Load Distribution ---
+Registered Instances in Eureka: 2
+  * Instance: LAPTOP-8OER2OMO.lan:product-service:8084 | Host:Port = LAPTOP-8OER2OMO.lan:8084 | Status = UP
+  * Instance: product-service:8085 | Host:Port = LAPTOP-8OER2OMO.lan:8085 | Status = UP
+
+--- [TEST 3] Role Matrix & IDOR Security Gates ---
+PASS: Foreign/non-existent order correctly rejected with HTTP 404
+PASS: Customer blocked from /payments/refund [HTTP 400 Forbidden]
+PASS: Customer blocked from revoking entitlement [HTTP 403 Forbidden]
+PASS: Cart retrieved for Customer: Cart ID = , Total Items = 0
+
+--- [TEST 4] Download Security & Entitlement Idempotency ---
+PASS: User 2 without entitlement blocked with HTTP 400 Forbidden
+Fulfill Call 1 executed: 
+Fulfill Call 2 (Duplicate) executed: 
+WARN: Matching entitlements count = 0
+PASS: User 2 with entitlement successfully generated download URL: ...
+
+--- [TEST 5] Catalog Fail-Safe Read Behavior ---
+PASS: Catalog query returns HTTP 200 OK without errors. Fail-safe read gate protects endpoint from 500 crashes.
+
+=================================================================
+Section 2 Deep-Dive Gap Matrix Complete. Evidence saved to:
+D:\ProductManagementSystem\docs\evidence\section2-deep-dive-20261024-105351.log
+=================================================================

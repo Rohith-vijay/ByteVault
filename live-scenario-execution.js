@@ -94,13 +94,14 @@ async function runEndToEndScenario() {
   console.log(`   -> Vendor Registered: HTTP ${vRegRes.status}, Vendor ID: ${vendorId}`);
 
   // Initialize Vendor Profile
-  await request('http://localhost:8080/api/v1/users/me/vendor-profile', {
+  const profRes = await request('http://localhost:8080/api/v1/users/me/vendor-profile', {
     headers: { 'Authorization': `Bearer ${vendorToken}` }
   });
+  const vendorProfileId = profRes.body?.data?.id || profRes.body?.id || vendorId;
 
   // 3. Admin Approves New Vendor
-  console.log(`\n3. Admin Approving Vendor (ID: ${vendorId})...`);
-  const approveRes = await request(`http://localhost:8080/api/v1/users/admin/vendors/${vendorId}/approve`, {
+  console.log(`\n3. Admin Approving Vendor (ID: ${vendorProfileId})...`);
+  const approveRes = await request(`http://localhost:8080/api/v1/users/admin/vendors/${vendorProfileId}/approve`, {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${adminToken}` }
   });

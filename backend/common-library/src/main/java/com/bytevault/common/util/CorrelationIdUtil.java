@@ -17,9 +17,13 @@ public class CorrelationIdUtil {
             correlationId = UUID.randomUUID().toString();
         }
         MDC.put(CORRELATION_ID_LOG_VAR, correlationId);
+        MDC.put("X-Correlation-ID", correlationId);
+        MDC.put("X-Correlation-Id", correlationId);
     }
 
     public static void clear() {
         MDC.remove(CORRELATION_ID_LOG_VAR);
+        MDC.remove("X-Correlation-ID");
+        MDC.remove("X-Correlation-Id");
     }
 }

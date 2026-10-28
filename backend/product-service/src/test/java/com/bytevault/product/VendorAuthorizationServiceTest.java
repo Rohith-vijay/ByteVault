@@ -128,4 +128,45 @@ public class VendorAuthorizationServiceTest {
 
         assertTrue(ex.getMessage().contains("REJECTED"));
     }
+
+    @Test
+    @DisplayName("Read gate: isVendorApproved returns true and caches for APPROVED vendor")
+    void testIsVendorApproved_Approved_ReturnsTrueAndCaches() {
+        UUID vendorId = UUID.randomUUID();
+        VendorStatusSummaryDto approvedDto = VendorStatusSummaryDto.builder()
+                .userId(vendorId)
+                .status("APPROVED")
+                .isApproved(true)
+                .build();
+
+        when(userClient.getVendorStatus(vendorId)).thenReturn(ResponseEntity.ok(com.bytevault.common.api.ApiResponse.success("Success", approvedDto)));
+
+        assertTrue(vendorAuthorizationService.isVendorApproved(vendorId));
+        // Second call should hit in-memory cache without repeating Feign call
+        assertTrue(vendorAuthorizationService.isVendorApproved(vendorId));
+
+        verify(userClient, times(1)).getVendorStatus(vendorId);
+    }
+
+    @Test
+    @DisplayName("Read gate: isVendorApproved returns false for SUSPENDED vendor")
+    void testIsVendorApproved_Suspended_ReturnsFalse() {
+        UUID vendorId = UUID.randomUUID();
+        VendorStatusSummaryDto suspendedDto = VendorStatusSummaryDto.builder()
+                .userId(vendorId)
+                .status("SUSPENDED")
+                .isApproved(false)
+                .build();
+
+        when(userClient.getVendorStatus(vendorId)).thenReturn(ResponseEntity.ok(com.bytevault.common.api.ApiResponse.success("Success", suspendedDto)));
+
+        assertFalse(vendorAuthorizationService.isVendorApproved(vendorId));
+    }
+
+    @Test
+    @DisplayName("Read gate: null vendorId (admin/platform product) is always approved")
+    void testIsVendorApproved_NullVendor_ReturnsTrue() {
+        assertTrue(vendorAuthorizationService.isVendorApproved(null));
+        verify(userClient, never()).getVendorStatus(any());
+    }
 }

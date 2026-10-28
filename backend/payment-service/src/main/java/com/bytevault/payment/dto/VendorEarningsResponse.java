@@ -36,6 +36,7 @@ public class VendorEarningsResponse {
         private BigDecimal grossAmount;
         private BigDecimal platformFee;
         private BigDecimal netAmount;
+        private BigDecimal refundedAmount;
         private String status;
         private java.time.LocalDateTime createdAt;
     }

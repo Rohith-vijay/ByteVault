@@ -74,30 +74,32 @@ public class DataSeeder implements CommandLineRunner {
                     .build());
 
             productRepository.save(Product.builder()
-                    .name("ByteVault Titanium Hardware Key")
-                    .description("Military-grade FIDO2 / WebAuthn dual-interface security hardware key with tamper-proof enclave.")
-                    .price(new BigDecimal("79.99"))
-                    .productType(ProductType.PHYSICAL)
+                    .name("Synthwave Chronicles Studio Master FLAC")
+                    .description("Lossless 24-bit/192kHz multi-track digital audio master recording with full licensing.")
+                    .price(new BigDecimal("44.50"))
+                    .productType(ProductType.DIGITAL)
                     .status(ProductStatus.PUBLISHED)
-                    .category(hardware)
-                    .physicalSku("BV-HWKEY-TITANIUM-01")
-                    .physicalWeight(0.045)
-                    .physicalDimensions("45 x 18 x 5 mm")
+                    .category(software)
+                    .fileName("synthwave-chronicles-master.flac")
+                    .fileType("audio/flac")
+                    .fileSize(480000000L)
+                    .fileVersion("1.0.0")
                     .build());
 
             productRepository.save(Product.builder()
-                    .name("Synthwave Chronicles Master Vinyl (Limited)")
-                    .description("Heavyweight 180g double-LP collector's edition master analog recording.")
-                    .price(new BigDecimal("44.50"))
-                    .productType(ProductType.PHYSICAL)
+                    .name("Zero-Trust Security Architect Reference Guide")
+                    .description("Comprehensive enterprise blueprint for distributed authorization and token architectures.")
+                    .price(new BigDecimal("79.99"))
+                    .productType(ProductType.DIGITAL)
                     .status(ProductStatus.PUBLISHED)
-                    .category(vinyl)
-                    .physicalSku("BV-VINYL-SYNTH-02")
-                    .physicalWeight(0.480)
-                    .physicalDimensions("315 x 315 x 8 mm")
+                    .category(ebooks)
+                    .fileName("zero-trust-architecture-guide.pdf")
+                    .fileType("application/pdf")
+                    .fileSize(25000000L)
+                    .fileVersion("3.2.0")
                     .build());
 
-            log.info("[DataSeeder] Initialized 4 marketplace sample products (2 Digital, 2 Physical)");
+            log.info("[DataSeeder] Initialized 4 marketplace sample digital products");
         }
     }
 }

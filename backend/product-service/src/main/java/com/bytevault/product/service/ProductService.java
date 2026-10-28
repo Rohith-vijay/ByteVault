@@ -14,6 +14,7 @@ import com.bytevault.product.repository.ProductRepository;
 import com.bytevault.product.storage.StorageService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -32,6 +33,10 @@ public class ProductService {
     private final ProductRepository productRepository;
     private final CategoryRepository categoryRepository;
     private final StorageService storageService;
+    private final com.bytevault.product.security.VendorAuthorizationService vendorAuthorizationService;
+
+    @Value("${app.physical-products.enabled:false}")
+    private boolean physicalProductsEnabled;
 
     // --- VENDOR OPERATIONS (Approved Vendors Only) ---
 
@@ -329,12 +334,13 @@ public class ProductService {
         log.info("[ProductService] Product soft-deleted/deactivated: id={}", id);
     }
 
-    // --- PUBLIC STOREFRONT CATALOG (PUBLISHED Only) ---
+    // --- PUBLIC STOREFRONT CATALOG (PUBLISHED Only & APPROVED Vendors Only) ---
 
     @Transactional(readOnly = true)
     public List<ProductResponse> getAllProducts() {
         return productRepository.findByStatus(ProductStatus.PUBLISHED)
                 .stream()
+                .filter(p -> vendorAuthorizationService.isVendorApproved(p.getVendorId()))
                 .map(this::mapToResponse)
                 .collect(Collectors.toList());
     }
@@ -343,6 +349,7 @@ public class ProductService {
     public List<ProductResponse> searchProducts(String query, ProductType type, Long categoryId) {
         List<Product> published = productRepository.findByStatus(ProductStatus.PUBLISHED);
         return published.stream()
+                .filter(p -> vendorAuthorizationService.isVendorApproved(p.getVendorId()))
                 .filter(p -> {
                     if (query != null && !query.trim().isEmpty()) {
                         String q = query.toLowerCase();
@@ -368,7 +375,7 @@ public class ProductService {
         Product product = productRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found with ID: " + id));
 
-        if (product.getStatus() != ProductStatus.PUBLISHED) {
+        if (product.getStatus() != ProductStatus.PUBLISHED || !vendorAuthorizationService.isVendorApproved(product.getVendorId())) {
             throw new ResourceNotFoundException("Product not found or currently unavailable.");
         }
 
@@ -425,6 +432,10 @@ public class ProductService {
         return storageService.downloadFile(key);
     }
 
+    public boolean validateSignedUrl(String key, Long expires, String signature) {
+        return storageService.validateSignedUrl(key, expires, signature);
+    }
+
     // --- HELPER & VALIDATION METHODS ---
 
     private void validateProductCreation(CreateProductRequest request) {
@@ -439,6 +450,9 @@ public class ProductService {
         }
 
         if (request.getProductType() == ProductType.PHYSICAL) {
+            if (!physicalProductsEnabled) {
+                throw new BadRequestException("Physical products are not supported in this release. ByteVault Media is currently configured for digital assets only.");
+            }
             String sku = resolveSku(request);
             if (sku == null || sku.trim().isEmpty()) {
                 throw new BadRequestException("SKU is required for physical products.");

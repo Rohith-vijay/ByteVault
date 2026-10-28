@@ -4,7 +4,7 @@ param(
 )
 
 $ErrorActionPreference = "Continue"
-$rootDir = "D:\ProductManagementSystem"
+$rootDir = $PSScriptRoot
 $backendDir = "$rootDir\backend"
 $frontendDir = "$rootDir\frontend\customer-portal"
 $logsDir = "$rootDir\logs"
@@ -17,18 +17,13 @@ if (-not (Test-Path $logsDir)) {
 
 $services = @(
     @{ Name = "discovery-server"; Port = 8761; Module = "discovery-server" },
-    @{ Name = "auth-service"; Port = 8081; Module = "auth-service" },
-    @{ Name = "user-service"; Port = 8082; Module = "user-service" },
+    @{ Name = "identity-service"; Port = 8081; Module = "identity-service" },
     @{ Name = "product-service"; Port = 8084; Module = "product-service" },
-    @{ Name = "inventory-service"; Port = 8085; Module = "inventory-service" },
     @{ Name = "cart-service"; Port = 8086; Module = "cart-service" },
     @{ Name = "order-service"; Port = 8087; Module = "order-service" },
-    @{ Name = "fulfillment-service"; Port = 8088; Module = "fulfillment-service" },
-    @{ Name = "shipping-service"; Port = 8089; Module = "shipping-service" },
-    @{ Name = "notification-service"; Port = 8090; Module = "notification-service" },
     @{ Name = "payment-service"; Port = 8091; Module = "payment-service" },
-    @{ Name = "warehouse-service"; Port = 8092; Module = "warehouse-service" },
-    @{ Name = "support-service"; Port = 8093; Module = "support-service" },
+    @{ Name = "fulfillment-service"; Port = 8088; Module = "fulfillment-service" },
+    @{ Name = "notification-service"; Port = 8090; Module = "notification-service" },
     @{ Name = "api-gateway"; Port = 8080; Module = "api-gateway" }
 )
 
@@ -36,7 +31,7 @@ function Start-ByteVaultService($svc) {
     $jarPath = "$backendDir\$($svc.Module)\target\$($svc.Module)-1.0.0-SNAPSHOT.jar"
     if (Test-Path $jarPath) {
         Write-Host ">>> Starting $($svc.Name) on port $($svc.Port) (JAR mode)..." -ForegroundColor Cyan
-        $argList = @("-Xms128m", "-Xmx384m", "-jar", $jarPath)
+        $argList = @("-Xms64m", "-Xmx320m", "-XX:+TieredCompilation", "-XX:TieredStopAtLevel=1", "-jar", $jarPath)
         $p = Start-Process -FilePath "java.exe" -ArgumentList $argList -WorkingDirectory $backendDir -PassThru -RedirectStandardOutput "$logsDir\$($svc.Name).log" -RedirectStandardError "$logsDir\$($svc.Name)-error.log"
         return $p
     } else {
@@ -57,32 +52,15 @@ $runningPids += [PSCustomObject]@{ Name = $discovery.Name; Port = $discovery.Por
 Write-Host "Waiting 10 seconds for Discovery Server to initialize..." -ForegroundColor Yellow
 Start-Sleep -Seconds 10
 
-# 2. Start Core Data Microservices (Auth, User, Product)
-Write-Host "`n--- Launching Core Data Services ---" -ForegroundColor Magenta
-for ($i = 1; $i -le 3; $i++) {
+# 2. Start Core Data & Domain Microservices
+Write-Host "`n--- Launching Active Microservices (7) ---" -ForegroundColor Magenta
+for ($i = 1; $i -lt ($services.Count - 1); $i++) {
     $svc = $services[$i]
     $p = Start-ByteVaultService $svc
     $runningPids += [PSCustomObject]@{ Name = $svc.Name; Port = $svc.Port; PID = $p.Id; StartTime = (Get-Date).ToString("s") }
+    Start-Sleep -Seconds 1
 }
-Start-Sleep -Seconds 4
-
-# 3. Start Business & Commerce Services (Inventory, Cart, Order, Fulfillment, Payment)
-Write-Host "`n--- Launching Commerce & Fulfillment Services ---" -ForegroundColor Magenta
-for ($i = 4; $i -le 8; $i++) {
-    $svc = $services[$i]
-    $p = Start-ByteVaultService $svc
-    $runningPids += [PSCustomObject]@{ Name = $svc.Name; Port = $svc.Port; PID = $p.Id; StartTime = (Get-Date).ToString("s") }
-}
-Start-Sleep -Seconds 4
-
-# 4. Start Auxiliary Services (Shipping, Notification, Payment, Warehouse, Support)
-Write-Host "`n--- Launching Auxiliary Services ---" -ForegroundColor Magenta
-for ($i = 9; $i -lt ($services.Count - 1); $i++) {
-    $svc = $services[$i]
-    $p = Start-ByteVaultService $svc
-    $runningPids += [PSCustomObject]@{ Name = $svc.Name; Port = $svc.Port; PID = $p.Id; StartTime = (Get-Date).ToString("s") }
-}
-Start-Sleep -Seconds 4
+Start-Sleep -Seconds 5
 
 # 5. Start API Gateway
 Write-Host "`n--- Launching API Gateway & Frontend ---" -ForegroundColor Magenta
@@ -106,7 +84,7 @@ $runningPids | ConvertTo-Json -Depth 3 | Set-Content "$rootDir\.bytevault-pids.j
 $sw.Stop()
 $elapsed = [Math]::Round($sw.Elapsed.TotalSeconds, 1)
 
-Write-Host "`nAll 14 ByteVault backend components and frontend UI launched in $elapsed seconds!" -ForegroundColor Green
+Write-Host "`nAll 7 ByteVault microservices, discovery server, gateway, and frontend UI launched in $elapsed seconds!" -ForegroundColor Green
 Write-Host "Persistence: 100% POSTGRESQL (NO H2, NO MOCKS)" -ForegroundColor Green
 Write-Host "Logs are being written to $logsDir" -ForegroundColor Cyan
 Write-Host "Discovery Server: http://localhost:8761" -ForegroundColor Green

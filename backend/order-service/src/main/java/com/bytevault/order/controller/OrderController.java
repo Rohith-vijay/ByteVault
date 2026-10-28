@@ -3,19 +3,18 @@ package com.bytevault.order.controller;
 import com.bytevault.common.api.ApiResponse;
 import com.bytevault.order.dto.CreateOrderRequest;
 import com.bytevault.order.dto.OrderResponse;
+import com.bytevault.order.dto.OrderPaymentConfirmationRequest;
 import com.bytevault.order.entity.OrderStatus;
 import com.bytevault.order.service.OrderService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
-
-import com.bytevault.order.dto.OrderPaymentConfirmationRequest;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpStatus;
 
 import java.util.List;
 import java.util.UUID;
@@ -112,17 +111,7 @@ public class OrderController {
 
         log.info("[OrderController] Internal mark-paid request received for orderId={}", id);
 
-        boolean hasInternalRole = (userRolesHeader != null && userRolesHeader.contains("ROLE_INTERNAL_SERVICE"))
-                || (authentication != null && authentication.getAuthorities().stream()
-                .anyMatch(a -> a.getAuthority().equals("ROLE_INTERNAL_SERVICE")));
-
-        boolean hasAdminRole = (userRolesHeader != null && userRolesHeader.contains("ROLE_ADMIN"))
-                || (authentication != null && authentication.getAuthorities().stream()
-                .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN")));
-
-        boolean isValidGatewaySecret = gatewaySecretHeader != null && gatewaySecretHeader.equals(gatewaySecret);
-
-        if (!isValidGatewaySecret || (!hasInternalRole && !hasAdminRole)) {
+        if (!isInternalAuthorized(gatewaySecretHeader, userRolesHeader, authentication)) {
             log.warn("[OrderController] Unauthorized attempt to call internal mark-paid for orderId={}", id);
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body(ApiResponse.error("Access Forbidden: Internal service authentication required.", 403));
@@ -130,6 +119,49 @@ public class OrderController {
 
         OrderResponse response = orderService.markOrderPaid(id, request);
         return ResponseEntity.ok(ApiResponse.success("Order marked as PAID and outbox event created", response));
+    }
+
+    /**
+     * Internal endpoint: returns per-vendor gross subtotals for a given order.
+     * Called by Payment Service immediately after mark-paid succeeds, to write VendorLedger rows.
+     * Secured by X-Gateway-Secret + ROLE_INTERNAL_SERVICE (same as mark-paid).
+     */
+    @GetMapping("/internal/{id}/vendor-breakdown")
+    public ResponseEntity<ApiResponse<List<com.bytevault.common.dto.VendorBreakdownEntry>>> getVendorBreakdown(
+            @PathVariable UUID id,
+            @RequestHeader(value = "X-Gateway-Secret", required = false) String gatewaySecretHeader,
+            @RequestHeader(value = "X-User-Roles", required = false) String userRolesHeader,
+            Authentication authentication) {
+
+        if (!isInternalAuthorized(gatewaySecretHeader, userRolesHeader, authentication)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(ApiResponse.error("Access Forbidden: Internal service authentication required.", 403));
+        }
+
+        List<com.bytevault.common.dto.VendorBreakdownEntry> breakdown = orderService.getVendorBreakdown(id);
+        return ResponseEntity.ok(ApiResponse.success("Vendor breakdown retrieved", breakdown));
+    }
+
+    /**
+     * Internal endpoint: applies a refund-driven CANCELLED transition and triggers entitlement revocation.
+     * Called by Payment Service's RefundService on full refund.
+     * Secured identically to mark-paid; NOT the same as the admin updateOrderStatus endpoint.
+     */
+    @PostMapping("/internal/{id}/refund-cancel")
+    public ResponseEntity<ApiResponse<OrderResponse>> refundCancelInternal(
+            @PathVariable UUID id,
+            @RequestHeader(value = "X-Gateway-Secret", required = false) String gatewaySecretHeader,
+            @RequestHeader(value = "X-User-Roles", required = false) String userRolesHeader,
+            Authentication authentication) {
+
+        if (!isInternalAuthorized(gatewaySecretHeader, userRolesHeader, authentication)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(ApiResponse.error("Access Forbidden: Internal service authentication required.", 403));
+        }
+
+        log.info("[OrderController] Internal refund-cancel for orderId={}", id);
+        OrderResponse response = orderService.applyRefundCancel(id);
+        return ResponseEntity.ok(ApiResponse.success("Order cancelled via refund path", response));
     }
 
     @PostMapping("/{id}/cancel")
@@ -164,5 +196,9 @@ public class OrderController {
             }
         }
         throw new IllegalArgumentException("User identity could not be resolved from authentication context");
+    }
+
+    private boolean isInternalAuthorized(String gatewaySecretHeader, String userRolesHeader, Authentication auth) {
+        return gatewaySecretHeader != null && gatewaySecretHeader.equals(gatewaySecret);
     }
 }

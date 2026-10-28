@@ -22,6 +22,9 @@ public class FulfillmentController {
 
     private final FulfillmentService fulfillmentService;
 
+    @org.springframework.beans.factory.annotation.Value("${app.gateway.secret:platform_default_gateway_shared_secret}")
+    private String gatewaySecret;
+
     @GetMapping("/downloads/{productId}")
     @PreAuthorize("hasRole('CUSTOMER') or hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<Map<String, String>>> downloadDigitalProduct(
@@ -65,10 +68,39 @@ public class FulfillmentController {
             @RequestParam("orderId") UUID orderId,
             @RequestParam("userId") UUID userId,
             @RequestBody java.util.List<UUID> productIds) {
+        if (gatewaySecretHeader == null || !gatewaySecretHeader.equals(gatewaySecret)) {
+            return ResponseEntity.status(org.springframework.http.HttpStatus.FORBIDDEN)
+                    .body(ApiResponse.error("Access Forbidden: Direct calls not allowed.", 403));
+        }
         log.info("[FulfillmentController] Internal fulfillment execution requested for orderId={}, userId={}", orderId, userId);
         fulfillmentService.fulfillDigitalOrder(orderId, userId, productIds);
         return ResponseEntity.ok(ApiResponse.success("Order digitally fulfilled", null));
     }
+
+    /**
+     * Internal endpoint called by Order Service when a full-refund CANCELLED transition is applied.
+     * Secured by X-Gateway-Secret; no end-user role required.
+     */
+    @PostMapping("/internal/revoke-by-order")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> revokeEntitlementsByOrderInternal(
+            @RequestHeader(value = "X-Gateway-Secret", required = false) String gatewaySecretHeader,
+            @RequestHeader(value = "X-User-Roles", required = false) String userRolesHeader,
+            @RequestParam("orderId") UUID orderId) {
+
+        if (gatewaySecretHeader == null || !gatewaySecretHeader.equals(gatewaySecret)) {
+            return ResponseEntity.status(org.springframework.http.HttpStatus.FORBIDDEN)
+                    .body(ApiResponse.error("Access Forbidden: Direct calls not allowed.", 403));
+        }
+
+        log.info("[FulfillmentController] Internal revoke-by-order request for orderId={}", orderId);
+        int revoked = fulfillmentService.revokeEntitlementsByOrderId(orderId);
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("orderId", orderId);
+        result.put("revokedCount", revoked);
+        return ResponseEntity.ok(ApiResponse.success("Entitlements revoked for order", result));
+    }
+
 
     private UUID resolveUserId(String headerUserId, Authentication authentication) {
         if (headerUserId != null && !headerUserId.trim().isEmpty()) {

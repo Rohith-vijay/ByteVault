@@ -1,0 +1,54 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: identity-service
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/identity_db}
+    username: ${DB_USER:postgres}
+    password: ${DB_PASSWORD:}
+    driver-class-name: ${DB_DRIVER:org.postgresql.Driver}
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    database-platform: ${DB_DIALECT:org.hibernate.dialect.PostgreSQLDialect}
+    properties:
+      hibernate:
+        jdbc:
+          lob:
+            non_contextual_creation: true
+  mail:
+    host: ${SPRING_MAIL_HOST:smtp.gmail.com}
+    port: ${SPRING_MAIL_PORT:587}
+    username: ${SPRING_MAIL_USERNAME:}
+    password: ${SPRING_MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka/
+
+# Security context configurations
+app:
+  gateway:
+    secret: ${GATEWAY_SECRET:platform_default_gateway_shared_secret}
+  jwt:
+    secret: ${JWT_SECRET:default_super_secure_jwt_secret_placeholder_minimum_32_chars_long}
+    expiration: ${JWT_EXPIRATION:900000} # 15 minutes (short-lived stateless access token)
+  frontend:
+    url: ${FRONTEND_URL:http://localhost:5173}
+
+jwt:
+  refresh-expiration: ${JWT_REFRESH_EXPIRATION:604800000} # 7 days
+
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %5p [%X{correlationId}] --- [%t] %-40.40logger{39} : %m%n"

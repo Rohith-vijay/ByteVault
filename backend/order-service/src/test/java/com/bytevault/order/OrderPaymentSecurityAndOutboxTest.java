@@ -57,8 +57,7 @@ public class OrderPaymentSecurityAndOutboxTest {
                 outboxEventRepository,
                 new ObjectMapper(),
                 null, // productClient
-                null, // inventoryClient
-                null  // rabbitTemplate
+                null  // inventoryClient
         );
 
         orderController = new OrderController(orderService);
@@ -129,25 +128,74 @@ public class OrderPaymentSecurityAndOutboxTest {
     }
 
     @Test
-    @DisplayName("Internal mark-paid called by normal CUSTOMER or VENDOR -> 403 Forbidden")
-    void testMarkOrderPaid_CustomerOrVendorRole_Forbidden() {
+    @DisplayName("Internal mark-paid succeeds when called with valid gateway secret in CUSTOMER request context")
+    void testMarkOrderPaid_CustomerContextWithValidSecret_Success() {
         UUID orderId = UUID.randomUUID();
-        OrderPaymentConfirmationRequest req = OrderPaymentConfirmationRequest.builder()
-                .paymentId("pay_123")
-                .amount(BigDecimal.TEN)
+        Order order = Order.builder()
+                .id(orderId)
+                .orderNumber("ORD-CUST-CTX")
+                .userId(UUID.randomUUID())
+                .status(OrderStatus.PENDING)
+                .totalAmount(new BigDecimal("100.00"))
+                .orderType(OrderType.DIGITAL)
+                .items(new ArrayList<>())
                 .build();
 
-        // Caller has ROLE_CUSTOMER, even with gateway secret
-        ResponseEntity<ApiResponse<OrderResponse>> resCustomer = orderController.markOrderPaidInternal(
+        when(orderRepository.findById(orderId)).thenReturn(Optional.of(order));
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(outboxEventRepository.findByAggregateIdAndEventType(orderId, "order.paid")).thenReturn(Optional.empty());
+
+        OrderPaymentConfirmationRequest req = OrderPaymentConfirmationRequest.builder()
+                .paymentId("pay_123")
+                .amount(new BigDecimal("100.00"))
+                .build();
+
+        // Customer-authenticated context forwarded across Feign, but carrying valid gatewaySecret
+        ResponseEntity<ApiResponse<OrderResponse>> response = orderController.markOrderPaidInternal(
                 orderId, gatewaySecret, "ROLE_CUSTOMER", req, null);
-        assertEquals(HttpStatus.FORBIDDEN, resCustomer.getStatusCode());
 
-        // Caller has ROLE_VENDOR
-        ResponseEntity<ApiResponse<OrderResponse>> resVendor = orderController.markOrderPaidInternal(
-                orderId, gatewaySecret, "ROLE_VENDOR", req, null);
-        assertEquals(HttpStatus.FORBIDDEN, resVendor.getStatusCode());
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals("PAID", response.getBody().data().getStatus());
+    }
 
-        verify(orderRepository, never()).findById(any());
+    @Test
+    @DisplayName("Internal vendor-breakdown rejects request with missing or invalid gateway secret (403)")
+    void testGetVendorBreakdown_InvalidGatewaySecret_Forbidden() {
+        UUID orderId = UUID.randomUUID();
+
+        // Missing secret
+        ResponseEntity<?> resMissing = orderController.getVendorBreakdown(orderId, null, null, null);
+        assertEquals(HttpStatus.FORBIDDEN, resMissing.getStatusCode());
+
+        // Invalid secret
+        ResponseEntity<?> resInvalid = orderController.getVendorBreakdown(orderId, "wrong_secret", "ROLE_INTERNAL_SERVICE", null);
+        assertEquals(HttpStatus.FORBIDDEN, resInvalid.getStatusCode());
+    }
+
+    @Test
+    @DisplayName("Internal refund-cancel rejects request without gateway secret (403), succeeds with valid secret")
+    void testRefundCancelInternal_Authorization() {
+        UUID orderId = UUID.randomUUID();
+
+        // Missing secret -> 403
+        ResponseEntity<?> resMissing = orderController.refundCancelInternal(orderId, null, null, null);
+        assertEquals(HttpStatus.FORBIDDEN, resMissing.getStatusCode());
+
+        // Valid secret in customer context -> 200
+        Order order = Order.builder()
+                .id(orderId)
+                .status(OrderStatus.PAID)
+                .orderType(OrderType.DIGITAL)
+                .orderNumber("ORD-REFUND-AUTH")
+                .totalAmount(BigDecimal.TEN)
+                .build();
+        when(orderRepository.findById(orderId)).thenReturn(Optional.of(order));
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        ResponseEntity<ApiResponse<OrderResponse>> resValid = orderController.refundCancelInternal(
+                orderId, gatewaySecret, "ROLE_CUSTOMER", null);
+        assertEquals(HttpStatus.OK, resValid.getStatusCode());
+        assertEquals(OrderStatus.CANCELLED, order.getStatus());
     }
 
     @Test

@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component;
 import java.io.IOException;
 
 @Component
+@org.springframework.core.annotation.Order(org.springframework.core.Ordered.HIGHEST_PRECEDENCE)
 public class CorrelationIdFilter implements Filter {
 
     @Override
@@ -15,6 +16,12 @@ public class CorrelationIdFilter implements Filter {
             throws IOException, ServletException {
         if (request instanceof HttpServletRequest httpRequest && response instanceof HttpServletResponse httpResponse) {
             String correlationId = httpRequest.getHeader(CorrelationIdUtil.CORRELATION_ID_HEADER);
+            if (correlationId == null || correlationId.isBlank()) {
+                correlationId = httpRequest.getHeader("X-Correlation-Id");
+            }
+            if (correlationId == null || correlationId.isBlank()) {
+                correlationId = httpRequest.getHeader("x-correlation-id");
+            }
             CorrelationIdUtil.setCorrelationId(correlationId);
             
             // Set header on response

@@ -7,7 +7,6 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 
-@Component
 public class FeignCorrelationInterceptor implements RequestInterceptor {
 
     @Value("${app.gateway.secret:platform_default_gateway_shared_secret}")

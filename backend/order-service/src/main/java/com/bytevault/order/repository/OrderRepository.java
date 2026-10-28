@@ -12,4 +12,5 @@ import java.util.UUID;
 public interface OrderRepository extends JpaRepository<Order, UUID> {
     List<Order> findByUserIdOrderByCreatedAtDesc(UUID userId);
     Optional<Order> findByOrderNumber(String orderNumber);
+    List<Order> findByStatusAndCreatedAtBefore(com.bytevault.order.entity.OrderStatus status, java.time.LocalDateTime cutoff);
 }

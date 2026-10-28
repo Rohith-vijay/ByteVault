@@ -9,7 +9,7 @@ import com.bytevault.payment.repository.PaymentTransactionRepository;
 import com.bytevault.payment.service.PaymentService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -27,9 +27,15 @@ public class PaymentController {
     private final PaymentService paymentService;
     private final com.bytevault.payment.service.VendorLedgerService vendorLedgerService;
     private final com.bytevault.payment.service.RefundService refundService;
-    private final RabbitTemplate rabbitTemplate;
     private final PaymentTransactionRepository transactionRepository;
     private final com.bytevault.payment.service.PaymentOrderSyncService paymentOrderSyncService;
+    private final com.bytevault.payment.client.OrderClient orderClient;
+
+    @Value("${app.gateway.secret:platform_default_gateway_shared_secret}")
+    private String gatewaySecret;
+
+    @Value("${razorpay.webhook-secret:}")
+    private String webhookSecret;
 
     @GetMapping("/vendor/earnings")
     public ResponseEntity<com.bytevault.payment.dto.VendorEarningsResponse> getVendorEarnings(
@@ -72,8 +78,16 @@ public class PaymentController {
     }
 
     @PostMapping("/refund")
+    @org.springframework.security.access.prepost.PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<com.bytevault.payment.dto.RefundResponse> processRefund(
+            @RequestHeader(value = "X-User-Roles", required = false) String rolesHeader,
+            org.springframework.security.core.Authentication auth,
             @jakarta.validation.Valid @RequestBody com.bytevault.payment.dto.RefundRequest request) {
+        boolean isAdmin = (rolesHeader != null && rolesHeader.contains("ROLE_ADMIN")) ||
+                (auth != null && auth.getAuthorities().stream().anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN")));
+        if (!isAdmin) {
+            throw new org.springframework.security.access.AccessDeniedException("Access denied: Admin role required to process refunds.");
+        }
         return ResponseEntity.ok(refundService.processRefund(request));
     }
 
@@ -103,13 +117,30 @@ public class PaymentController {
         throw new org.springframework.security.access.AccessDeniedException("Unauthorized: Unable to resolve authenticated user ID.");
     }
 
+    public ResponseEntity<PaymentOrderResponse> createPaymentOrder(PaymentOrderRequest request) throws Exception {
+        return createPaymentOrder(null, null, request);
+    }
+
+    public ResponseEntity<Map<String, Object>> verifyPayment(PaymentVerifyRequest request) throws Exception {
+        return verifyPayment(null, null, null, request);
+    }
+
     @PostMapping({"", "/create-order"})
-    public ResponseEntity<PaymentOrderResponse> createPaymentOrder(@RequestBody PaymentOrderRequest request) throws Exception {
+    public ResponseEntity<PaymentOrderResponse> createPaymentOrder(
+            @RequestHeader(value = "X-User-Id", required = false) String userIdHeader,
+            org.springframework.security.core.Authentication auth,
+            @RequestBody PaymentOrderRequest request) throws Exception {
         PaymentOrderResponse response = paymentService.createOrder(request);
+
+        UUID creatorUserId = null;
+        try {
+            creatorUserId = resolveUserId(userIdHeader, auth);
+        } catch (Exception ignored) {}
 
         try {
             PaymentTransaction transaction = PaymentTransaction.builder()
                     .orderId(request.getReceipt() != null && request.getReceipt().length() == 36 ? UUID.fromString(request.getReceipt()) : null)
+                    .userId(creatorUserId)
                     .amount(request.getAmount())
                     .currency(request.getCurrency() != null ? request.getCurrency() : "INR")
                     .provider("RAZORPAY")
@@ -125,14 +156,43 @@ public class PaymentController {
     }
 
     @PostMapping("/verify")
-    public ResponseEntity<Map<String, Object>> verifyPayment(@RequestBody PaymentVerifyRequest request) throws Exception {
+    public ResponseEntity<Map<String, Object>> verifyPayment(
+            @RequestHeader(value = "X-User-Id", required = false) String userIdHeader,
+            @RequestHeader(value = "X-User-Roles", required = false) String rolesHeader,
+            org.springframework.security.core.Authentication auth,
+            @RequestBody PaymentVerifyRequest request) throws Exception {
         log.info("[PaymentController] Verifying payment signatures: orderId={}", request.getRazorpayOrderId());
 
-        // Idempotency check: if transaction already verified as SUCCESS, return cached success response
+        UUID callerUserId = null;
+        try {
+            callerUserId = resolveUserId(userIdHeader, auth);
+        } catch (Exception ignored) {}
+
+        boolean isAdmin = (rolesHeader != null && rolesHeader.contains("ROLE_ADMIN")) ||
+                (auth != null && auth.getAuthorities().stream().anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN")));
+
+        // Ownership enforcement: prevent IDOR/cross-user verification attempts
+        if (callerUserId != null && !isAdmin) {
+            if (request.getUserId() != null && !request.getUserId().trim().isEmpty()) {
+                try {
+                    UUID reqUserId = UUID.fromString(request.getUserId().trim());
+                    if (!callerUserId.equals(reqUserId)) {
+                        throw new org.springframework.security.access.AccessDeniedException(
+                                "Access denied: You cannot verify payment for another user.");
+                    }
+                } catch (IllegalArgumentException ignored) {}
+            }
+        }
+
+        // Idempotency & existing transaction check
         if (request.getRazorpayOrderId() != null) {
             var existingTx = transactionRepository.findByRazorpayOrderId(request.getRazorpayOrderId());
             if (existingTx.isPresent()) {
                 PaymentTransaction tx = existingTx.get();
+                if (callerUserId != null && !isAdmin && tx.getUserId() != null && !callerUserId.equals(tx.getUserId())) {
+                    throw new org.springframework.security.access.AccessDeniedException(
+                            "Access denied: You do not own this payment transaction.");
+                }
                 if ("SUCCESS".equalsIgnoreCase(tx.getStatus())) {
                     log.info("[PaymentController] Idempotent duplicate verification request for order: {}", request.getRazorpayOrderId());
                     Map<String, Object> cachedResponse = new HashMap<>();
@@ -158,9 +218,15 @@ public class PaymentController {
             }
 
             if (tx == null) {
+                UUID txUserId = callerUserId;
+                if (txUserId == null && request.getUserId() != null && !request.getUserId().trim().isEmpty()) {
+                    try {
+                        txUserId = UUID.fromString(request.getUserId().trim());
+                    } catch (Exception ignored) {}
+                }
                 tx = PaymentTransaction.builder()
                         .orderId(request.getDbOrderId() != null ? UUID.fromString(request.getDbOrderId()) : null)
-                        .userId(request.getUserId() != null ? UUID.fromString(request.getUserId()) : null)
+                        .userId(txUserId)
                         .razorpayOrderId(request.getRazorpayOrderId())
                         .amount(request.getAmount() != null ? request.getAmount() : java.math.BigDecimal.ZERO)
                         .currency("INR")
@@ -173,7 +239,9 @@ public class PaymentController {
             if (request.getDbOrderId() != null && !request.getDbOrderId().trim().isEmpty()) {
                 tx.setOrderId(UUID.fromString(request.getDbOrderId().trim()));
             }
-            if (request.getUserId() != null && !request.getUserId().trim().isEmpty()) {
+            if (tx.getUserId() == null && callerUserId != null) {
+                tx.setUserId(callerUserId);
+            } else if (tx.getUserId() == null && request.getUserId() != null && !request.getUserId().trim().isEmpty()) {
                 tx.setUserId(UUID.fromString(request.getUserId().trim()));
             }
 
@@ -187,9 +255,6 @@ public class PaymentController {
             log.info("[PaymentController] Payment verified. Order sync status: {} (immediateSync={})",
                     tx.getOrderSyncStatus(), synced);
 
-            // Note: DO NOT publish order.paid directly from Payment Service.
-            // Order Service writes order.paid to its transactional outbox upon marking the order as PAID.
-
             Map<String, Object> response = new HashMap<>();
             response.put("status", "SUCCESS");
             response.put("syncStatus", tx.getOrderSyncStatus());
@@ -199,7 +264,8 @@ public class PaymentController {
         } catch (Exception ex) {
             log.error("[PaymentController] Payment verification failed: {}", ex.getMessage());
 
-            // Update transaction record to FAILED
+            // Update transaction record to FAILED, but DO NOT fail order in order-service.
+            // Per spec: Order stays PENDING and retryable so the customer can retry payment.
             try {
                 if (request.getRazorpayOrderId() != null) {
                     transactionRepository.findByRazorpayOrderId(request.getRazorpayOrderId()).ifPresent(tx -> {
@@ -212,16 +278,6 @@ public class PaymentController {
                 log.warn("[PaymentController] Could not update transaction status to FAILED: {}", e.getMessage());
             }
 
-            // Fire PaymentFailedEvent
-            try {
-                Map<String, Object> failEvent = new HashMap<>();
-                failEvent.put("orderId", request.getDbOrderId());
-                failEvent.put("razorpayOrderId", request.getRazorpayOrderId());
-                failEvent.put("status", "FAILED");
-                failEvent.put("error", ex.getMessage());
-                rabbitTemplate.convertAndSend("order.exchange", "payment.failed", failEvent);
-            } catch (Exception ignored) {}
-
             throw ex;
         }
     }
@@ -232,6 +288,43 @@ public class PaymentController {
             @RequestBody String rawPayload) {
         log.info("[PaymentController] Received Razorpay Webhook callback. Signature present: {}", webhookSignature != null);
         Map<String, Object> response = new HashMap<>();
+
+        // Fix F1: Verify HMAC-SHA256 signature if webhookSecret is configured
+        if (webhookSecret != null && !webhookSecret.trim().isEmpty()) {
+            if (webhookSignature == null || webhookSignature.trim().isEmpty()) {
+                log.warn("[PaymentController] Webhook rejected: missing X-Razorpay-Signature header");
+                response.put("status", "REJECTED");
+                response.put("message", "Missing required X-Razorpay-Signature header");
+                return ResponseEntity.status(org.springframework.http.HttpStatus.BAD_REQUEST).body(response);
+            }
+
+            try {
+                javax.crypto.Mac mac = javax.crypto.Mac.getInstance("HmacSHA256");
+                mac.init(new javax.crypto.spec.SecretKeySpec(webhookSecret.trim().getBytes(java.nio.charset.StandardCharsets.UTF_8), "HmacSHA256"));
+                byte[] hash = mac.doFinal(rawPayload != null ? rawPayload.getBytes(java.nio.charset.StandardCharsets.UTF_8) : new byte[0]);
+                StringBuilder sb = new StringBuilder();
+                for (byte b : hash) {
+                    String hex = Integer.toHexString(0xff & b);
+                    if (hex.length() == 1) sb.append('0');
+                    sb.append(hex);
+                }
+                String expectedSig = sb.toString();
+
+                if (!java.security.MessageDigest.isEqual(
+                        expectedSig.getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                        webhookSignature.trim().getBytes(java.nio.charset.StandardCharsets.UTF_8))) {
+                    log.warn("[PaymentController] Webhook rejected: signature mismatch");
+                    response.put("status", "REJECTED");
+                    response.put("message", "Invalid webhook signature");
+                    return ResponseEntity.status(org.springframework.http.HttpStatus.BAD_REQUEST).body(response);
+                }
+            } catch (Exception ex) {
+                log.error("[PaymentController] Error computing webhook signature: {}", ex.getMessage());
+                response.put("status", "REJECTED");
+                response.put("message", "Signature verification error");
+                return ResponseEntity.status(org.springframework.http.HttpStatus.BAD_REQUEST).body(response);
+            }
+        }
 
         try {
             com.fasterxml.jackson.databind.JsonNode root = new com.fasterxml.jackson.databind.ObjectMapper().readTree(rawPayload);

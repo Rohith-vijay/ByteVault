@@ -186,4 +186,40 @@ public class FulfillmentSecurityTest {
         assertEquals("REVOKED", revoked.getStatus());
         verify(entitlementRepository, times(1)).save(entitlement);
     }
+
+    @Test
+    @DisplayName("Bulk revoke by orderId revokes all active entitlements and executes idempotently on repeat")
+    void testRevokeEntitlementsByOrderId_Idempotency() {
+        UUID orderId = UUID.randomUUID();
+        Entitlement e1 = Entitlement.builder()
+                .id(UUID.randomUUID())
+                .userId(userA)
+                .productId(product101)
+                .orderId(orderId)
+                .status("ACTIVE")
+                .build();
+        Entitlement e2 = Entitlement.builder()
+                .id(UUID.randomUUID())
+                .userId(userA)
+                .productId(product202)
+                .orderId(orderId)
+                .status("ACTIVE")
+                .build();
+
+        when(entitlementRepository.findByOrderId(orderId)).thenReturn(List.of(e1, e2));
+
+        // Call 1: both active -> 2 revoked
+        int count1 = fulfillmentService.revokeEntitlementsByOrderId(orderId);
+        assertEquals(2, count1);
+        assertEquals("REVOKED", e1.getStatus());
+        assertEquals("REVOKED", e2.getStatus());
+        verify(entitlementRepository, times(2)).save(any(Entitlement.class));
+
+        // Call 2: already REVOKED -> 0 revoked, no exceptions, no additional saves
+        reset(entitlementRepository);
+        when(entitlementRepository.findByOrderId(orderId)).thenReturn(List.of(e1, e2));
+        int count2 = fulfillmentService.revokeEntitlementsByOrderId(orderId);
+        assertEquals(0, count2);
+        verify(entitlementRepository, never()).save(any(Entitlement.class));
+    }
 }

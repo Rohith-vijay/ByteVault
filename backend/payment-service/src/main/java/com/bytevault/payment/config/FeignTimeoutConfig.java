@@ -1,10 +1,13 @@
 package com.bytevault.payment.config;
 
+import com.bytevault.common.config.CommonFeignConfig;
 import feign.Request;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
 
 import java.util.concurrent.TimeUnit;
 
+@Import(CommonFeignConfig.class)
 public class FeignTimeoutConfig {
 
     @Bean

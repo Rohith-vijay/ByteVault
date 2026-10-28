@@ -18,10 +18,11 @@ import java.time.LocalDateTime;
 @RequiredArgsConstructor
 public class PaymentOrderSyncService {
 
-    public static final int MAX_SYNC_ATTEMPTS = 5;
+    public static final int MAX_SYNC_ATTEMPTS = 20;
 
     private final OrderClient orderClient;
     private final PaymentTransactionRepository transactionRepository;
+    private final VendorLedgerService vendorLedgerService;
 
     @Value("${app.gateway.secret:platform_default_gateway_shared_secret}")
     private String gatewaySecret;
@@ -78,6 +79,7 @@ public class PaymentOrderSyncService {
 
             log.info("[PaymentOrderSync] Successfully synchronized orderId={} with order-service as PAID",
                     transaction.getOrderId());
+            recordLedgerEntriesForOrder(transaction.getOrderId());
             return true;
 
         } catch (FeignException.BadRequest | FeignException.NotFound | FeignException.Forbidden | FeignException.Unauthorized ex) {
@@ -90,6 +92,7 @@ public class PaymentOrderSyncService {
                 transaction.setLastSyncError(null);
                 transaction.setNextSyncRetryAt(null);
                 transactionRepository.save(transaction);
+                recordLedgerEntriesForOrder(transaction.getOrderId());
                 return true;
             }
 
@@ -126,6 +129,68 @@ public class PaymentOrderSyncService {
 
             transactionRepository.save(transaction);
             return false;
+        }
+    }
+
+    public void recordLedgerEntriesForOrder(java.util.UUID orderId) {
+        if (orderId == null) return;
+        try {
+            com.bytevault.common.api.ApiResponse<java.util.List<com.bytevault.common.dto.VendorBreakdownEntry>> response =
+                    orderClient.getVendorBreakdown(orderId, gatewaySecret, "ROLE_INTERNAL_SERVICE");
+            if (response != null && response.data() != null) {
+                for (com.bytevault.common.dto.VendorBreakdownEntry entry : response.data()) {
+                    if (entry.getVendorId() != null && entry.getGrossSubtotal() != null
+                            && entry.getGrossSubtotal().compareTo(java.math.BigDecimal.ZERO) > 0) {
+                        vendorLedgerService.recordTransaction(entry.getVendorId(), orderId, entry.getGrossSubtotal());
+                    }
+                }
+                log.info("[PaymentOrderSync] Successfully processed vendor ledger entries for orderId={}", orderId);
+            } else {
+                log.warn("[PaymentOrderSync] Empty vendor breakdown returned for orderId={}", orderId);
+            }
+        } catch (Exception ex) {
+            log.error("[PaymentOrderSync] Failed to record vendor ledger entries for orderId={}: {}. Ledger reconciliation job will retry.",
+                    orderId, ex.getMessage());
+        }
+    }
+
+    @org.springframework.scheduling.annotation.Scheduled(fixedDelayString = "${app.payment.ledger-reconcile-interval-ms:60000}")
+    public void reconcileLedgerEntries() {
+        try {
+            java.util.List<PaymentTransaction> missingLedger = transactionRepository.findSuccessfulTransactionsMissingLedger();
+            if (missingLedger.isEmpty()) return;
+            log.info("[LedgerReconciliation] Found {} transaction(s) missing ledger entries, backfilling...", missingLedger.size());
+            for (PaymentTransaction tx : missingLedger) {
+                if (tx.getOrderId() != null) {
+                    recordLedgerEntriesForOrder(tx.getOrderId());
+                }
+            }
+        } catch (Exception e) {
+            log.warn("[LedgerReconciliation] Error during ledger reconciliation check: {}", e.getMessage());
+        }
+    }
+
+    @org.springframework.scheduling.annotation.Scheduled(fixedDelayString = "${app.payment.refund-reconcile-interval-ms:60000}")
+    public void reconcilePendingRefundCancellations() {
+        try {
+            java.util.List<PaymentTransaction> pendingRefunds = transactionRepository.findByOrderSyncStatus("REFUND_PENDING");
+            if (pendingRefunds != null && !pendingRefunds.isEmpty()) {
+                log.info("[RefundReconciliation] Found {} pending refund cancellation(s), retrying sync...", pendingRefunds.size());
+                for (PaymentTransaction tx : pendingRefunds) {
+                    if (tx.getOrderId() != null) {
+                        try {
+                            orderClient.refundCancel(tx.getOrderId(), gatewaySecret, "ROLE_INTERNAL_SERVICE");
+                            tx.setOrderSyncStatus("REFUND_SYNCED");
+                            transactionRepository.save(tx);
+                            log.info("[RefundReconciliation] Successfully reconciled refund-cancel for orderId={}", tx.getOrderId());
+                        } catch (Exception e) {
+                            log.warn("[RefundReconciliation] Retry refund-cancel failed for orderId={}: {}", tx.getOrderId(), e.getMessage());
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.warn("[RefundReconciliation] Error during refund reconciliation check: {}", e.getMessage());
         }
     }
 

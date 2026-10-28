@@ -18,7 +18,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
+
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -44,10 +44,15 @@ public class OrderServiceTest {
     private com.bytevault.order.client.InventoryClient inventoryClient;
 
     @Mock
-    private RabbitTemplate rabbitTemplate;
+    private com.bytevault.order.client.FulfillmentRevokeClient fulfillmentRevokeClient;
 
     @InjectMocks
     private OrderService orderService;
+
+    @org.junit.jupiter.api.BeforeEach
+    void setUp() {
+        orderService.setFulfillmentRevokeClient(fulfillmentRevokeClient);
+    }
 
     @Test
     @DisplayName("Digital order creation with verified PUBLISHED price snapshots from product-service")
@@ -232,6 +237,8 @@ public class OrderServiceTest {
             return order;
         });
 
+        org.springframework.test.util.ReflectionTestUtils.setField(orderService, "physicalProductsEnabled", true);
+
         CreateOrderRequest request = CreateOrderRequest.builder()
                 .items(List.of(OrderItemRequest.builder()
                         .productId(physicalProductId)
@@ -266,6 +273,8 @@ public class OrderServiceTest {
         when(inventoryClient.reserveStock(eq(physicalProductId), eq(1), any()))
                 .thenReturn(com.bytevault.common.api.ApiResponse.error("Insufficient stock", 400));
 
+        org.springframework.test.util.ReflectionTestUtils.setField(orderService, "physicalProductsEnabled", true);
+
         CreateOrderRequest request = CreateOrderRequest.builder()
                 .items(List.of(OrderItemRequest.builder()
                         .productId(physicalProductId)
@@ -278,6 +287,39 @@ public class OrderServiceTest {
                 orderService.createOrder(userId, "buyer@bytevault.com", "John Doe", request));
 
         assertTrue(ex.getMessage().contains("Insufficient inventory"));
+        verify(orderRepository, never()).save(any(Order.class));
+    }
+
+    @Test
+    @DisplayName("Physical product order creation rejected when physicalProductsEnabled is false")
+    void testCreatePhysicalOrder_DisabledByDefault_ThrowsBadRequestException() {
+        UUID userId = UUID.randomUUID();
+        UUID physicalProductId = UUID.randomUUID();
+
+        ProductSummaryResponse physicalProduct = ProductSummaryResponse.builder()
+                .id(physicalProductId)
+                .name("ByteVault Hardcover Book")
+                .price(BigDecimal.valueOf(899.00))
+                .productType("PHYSICAL")
+                .status("ACTIVE")
+                .build();
+
+        when(productClient.getProductById(physicalProductId)).thenReturn(physicalProduct);
+
+        org.springframework.test.util.ReflectionTestUtils.setField(orderService, "physicalProductsEnabled", false);
+
+        CreateOrderRequest request = CreateOrderRequest.builder()
+                .items(List.of(OrderItemRequest.builder()
+                        .productId(physicalProductId)
+                        .quantity(1)
+                        .build()))
+                .shippingAddress("123 Tech Park, Silicon Valley, CA")
+                .build();
+
+        BadRequestException ex = assertThrows(BadRequestException.class, () ->
+                orderService.createOrder(userId, "buyer@bytevault.com", "John Doe", request));
+
+        assertTrue(ex.getMessage().contains("Physical product orders are not supported"));
         verify(orderRepository, never()).save(any(Order.class));
     }
 
@@ -394,6 +436,7 @@ public class OrderServiceTest {
                 .build();
 
         when(productClient.getProductById(physicalProductId)).thenReturn(physicalProduct);
+        org.springframework.test.util.ReflectionTestUtils.setField(orderService, "physicalProductsEnabled", true);
 
         CreateOrderRequest request = CreateOrderRequest.builder()
                 .items(List.of(OrderItemRequest.builder()
@@ -429,7 +472,6 @@ public class OrderServiceTest {
 
         assertNotNull(cancelled);
         assertEquals(OrderStatus.CANCELLED.name(), cancelled.getStatus());
-        verify(rabbitTemplate, times(1)).convertAndSend(eq("order.exchange"), eq("order.cancelled"), any(java.util.Map.class));
     }
 
     @Test
@@ -532,5 +574,92 @@ public class OrderServiceTest {
 
         assertThrows(BadRequestException.class, () ->
                 orderService.createOrder(userId, "buyer@bytevault.com", "Buyer", negativeQtyReq));
+    }
+
+    @Test
+    @DisplayName("applyRefundCancel moves order to CANCELLED and invokes Fulfillment revoke")
+    void testApplyRefundCancel_Success_TriggersRevocation() {
+        UUID orderId = UUID.randomUUID();
+        Order order = Order.builder()
+                .id(orderId)
+                .status(OrderStatus.PAID)
+                .orderType(OrderType.DIGITAL)
+                .orderNumber("ORD-REFUND-101")
+                .totalAmount(BigDecimal.valueOf(199.00))
+                .build();
+
+        when(orderRepository.findById(orderId)).thenReturn(java.util.Optional.of(order));
+        when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        OrderResponse response = orderService.applyRefundCancel(orderId);
+
+        assertNotNull(response);
+        assertEquals(OrderStatus.CANCELLED, order.getStatus());
+        verify(orderRepository, times(1)).save(order);
+        verify(fulfillmentRevokeClient, times(1)).revokeEntitlementsByOrder(orderId);
+    }
+
+    @Test
+    @DisplayName("applyRefundCancel on already-cancelled order is idempotent and skips save")
+    void testApplyRefundCancel_AlreadyCancelled_Idempotent() {
+        UUID orderId = UUID.randomUUID();
+        Order order = Order.builder()
+                .id(orderId)
+                .status(OrderStatus.CANCELLED)
+                .orderType(OrderType.DIGITAL)
+                .orderNumber("ORD-REFUND-102")
+                .totalAmount(BigDecimal.valueOf(199.00))
+                .build();
+
+        when(orderRepository.findById(orderId)).thenReturn(java.util.Optional.of(order));
+
+        OrderResponse response = orderService.applyRefundCancel(orderId);
+
+        assertNotNull(response);
+        assertEquals("CANCELLED", response.getStatus());
+        verify(orderRepository, never()).save(any());
+        verify(fulfillmentRevokeClient, never()).revokeEntitlementsByOrder(any());
+    }
+
+    @Test
+    @DisplayName("applyRefundCancel still cancels order even if fulfillment revoke throws exception")
+    void testApplyRefundCancel_FulfillmentRevokeThrows_OrderStillCancelled() {
+        UUID orderId = UUID.randomUUID();
+        Order order = Order.builder()
+                .id(orderId)
+                .status(OrderStatus.PAID)
+                .orderType(OrderType.DIGITAL)
+                .orderNumber("ORD-REFUND-103")
+                .totalAmount(BigDecimal.valueOf(299.00))
+                .build();
+
+        when(orderRepository.findById(orderId)).thenReturn(java.util.Optional.of(order));
+        when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        doThrow(new RuntimeException("Fulfillment connection timeout"))
+                .when(fulfillmentRevokeClient).revokeEntitlementsByOrder(orderId);
+
+        OrderResponse response = orderService.applyRefundCancel(orderId);
+
+        assertNotNull(response);
+        assertEquals(OrderStatus.CANCELLED, order.getStatus());
+        verify(orderRepository, times(1)).save(order);
+    }
+
+    @Test
+    @DisplayName("applyRefundCancel on non-cancellable order status throws BadRequestException")
+    void testApplyRefundCancel_InvalidStatus_ThrowsBadRequest() {
+        UUID orderId = UUID.randomUUID();
+        Order order = Order.builder()
+                .id(orderId)
+                .status(OrderStatus.COMPLETED)
+                .orderNumber("ORD-REFUND-104")
+                .totalAmount(BigDecimal.valueOf(199.00))
+                .build();
+
+        when(orderRepository.findById(orderId)).thenReturn(java.util.Optional.of(order));
+
+        assertThrows(BadRequestException.class, () -> orderService.applyRefundCancel(orderId));
+        verify(orderRepository, never()).save(any());
+        verify(fulfillmentRevokeClient, never()).revokeEntitlementsByOrder(any());
     }
 }

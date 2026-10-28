@@ -27,4 +27,12 @@ public interface PaymentTransactionRepository extends JpaRepository<PaymentTrans
     @org.springframework.data.jpa.repository.Modifying
     @Query("UPDATE PaymentTransaction pt SET pt.nextSyncRetryAt = :leaseUntil WHERE pt.id = :id AND (pt.nextSyncRetryAt IS NULL OR pt.nextSyncRetryAt <= :now)")
     int acquireReconciliationLease(@Param("id") UUID id, @Param("now") LocalDateTime now, @Param("leaseUntil") LocalDateTime leaseUntil);
+
+    @Query("SELECT pt FROM PaymentTransaction pt WHERE pt.status = 'SUCCESS' " +
+           "AND pt.orderSyncStatus = 'SYNCED' " +
+           "AND pt.orderId IS NOT NULL " +
+           "AND pt.orderId NOT IN (SELECT vl.orderId FROM VendorLedger vl)")
+    List<PaymentTransaction> findSuccessfulTransactionsMissingLedger();
+
+    List<PaymentTransaction> findByOrderSyncStatus(String orderSyncStatus);
 }

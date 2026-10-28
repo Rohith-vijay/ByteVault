@@ -62,6 +62,56 @@ public class VendorLedgerService {
         }
     }
 
+    @Transactional
+    public void reverseTransactionForRefund(UUID orderId, BigDecimal refundAmount, boolean isFullRefund) {
+        if (orderId == null) {
+            log.warn("[VendorLedgerService] reverseTransactionForRefund called with null orderId");
+            return;
+        }
+
+        List<VendorLedger> entries = ledgerRepository.findByOrderId(orderId);
+        if (entries.isEmpty()) {
+            log.warn("[VendorLedgerService] No ledger entries found for orderId={} to reverse", orderId);
+            return;
+        }
+
+        if (isFullRefund) {
+            for (VendorLedger entry : entries) {
+                entry.setStatus("REFUNDED");
+                entry.setRefundedAmount(entry.getGrossAmount());
+                ledgerRepository.save(entry);
+                log.info("[VendorLedgerService] Full refund applied to ledger entry {}: status=REFUNDED, refundedAmount={}",
+                        entry.getId(), entry.getGrossAmount());
+            }
+        } else {
+            BigDecimal totalGross = entries.stream()
+                    .map(VendorLedger::getGrossAmount)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+            if (totalGross.compareTo(BigDecimal.ZERO) <= 0) {
+                return;
+            }
+
+            BigDecimal remainingRefund = refundAmount != null ? refundAmount : BigDecimal.ZERO;
+            for (VendorLedger entry : entries) {
+                BigDecimal proportion = entry.getGrossAmount().divide(totalGross, 4, RoundingMode.HALF_UP);
+                BigDecimal vendorRefund = remainingRefund.multiply(proportion).setScale(2, RoundingMode.HALF_UP);
+
+                BigDecimal currentRefunded = entry.getRefundedAmount() != null ? entry.getRefundedAmount() : BigDecimal.ZERO;
+                BigDecimal newRefunded = currentRefunded.add(vendorRefund).min(entry.getGrossAmount());
+                entry.setRefundedAmount(newRefunded);
+                if (newRefunded.compareTo(entry.getGrossAmount()) >= 0) {
+                    entry.setStatus("REFUNDED");
+                } else {
+                    entry.setStatus("PARTIALLY_REFUNDED");
+                }
+                ledgerRepository.save(entry);
+                log.info("[VendorLedgerService] Partial refund applied to ledger entry {}: status={}, refundedAmount={}",
+                        entry.getId(), entry.getStatus(), newRefunded);
+            }
+        }
+    }
+
     @Transactional(readOnly = true)
     public VendorEarningsResponse getVendorEarnings(UUID vendorId) {
         List<VendorLedger> entries = ledgerRepository.findByVendorIdOrderByCreatedAtDesc(vendorId);
@@ -73,14 +123,28 @@ public class VendorLedgerService {
         BigDecimal pendingTotal = BigDecimal.ZERO;
 
         for (VendorLedger entry : entries) {
-            grossTotal = grossTotal.add(entry.getGrossAmount());
-            feeTotal = feeTotal.add(entry.getPlatformFee());
-            netTotal = netTotal.add(entry.getNetAmount());
+            if ("REFUNDED".equalsIgnoreCase(entry.getStatus())) {
+                continue;
+            }
 
-            if ("AVAILABLE".equalsIgnoreCase(entry.getStatus())) {
-                availableTotal = availableTotal.add(entry.getNetAmount());
+            BigDecimal effectiveGross = entry.getGrossAmount();
+            BigDecimal effectiveFee = entry.getPlatformFee();
+            BigDecimal effectiveNet = entry.getNetAmount();
+
+            if ("PARTIALLY_REFUNDED".equalsIgnoreCase(entry.getStatus()) && entry.getRefundedAmount() != null) {
+                effectiveGross = effectiveGross.subtract(entry.getRefundedAmount()).max(BigDecimal.ZERO);
+                effectiveFee = effectiveGross.multiply(PLATFORM_FEE_RATE).setScale(2, RoundingMode.HALF_UP);
+                effectiveNet = effectiveGross.subtract(effectiveFee);
+            }
+
+            grossTotal = grossTotal.add(effectiveGross);
+            feeTotal = feeTotal.add(effectiveFee);
+            netTotal = netTotal.add(effectiveNet);
+
+            if ("AVAILABLE".equalsIgnoreCase(entry.getStatus()) || "PARTIALLY_REFUNDED".equalsIgnoreCase(entry.getStatus())) {
+                availableTotal = availableTotal.add(effectiveNet);
             } else if ("PENDING_SETTLEMENT".equalsIgnoreCase(entry.getStatus())) {
-                pendingTotal = pendingTotal.add(entry.getNetAmount());
+                pendingTotal = pendingTotal.add(effectiveNet);
             }
         }
 
@@ -91,6 +155,7 @@ public class VendorLedgerService {
                         .grossAmount(e.getGrossAmount())
                         .platformFee(e.getPlatformFee())
                         .netAmount(e.getNetAmount())
+                        .refundedAmount(e.getRefundedAmount() != null ? e.getRefundedAmount() : BigDecimal.ZERO)
                         .status(e.getStatus())
                         .createdAt(e.getCreatedAt())
                         .build())

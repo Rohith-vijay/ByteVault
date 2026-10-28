@@ -1,0 +1,35 @@
+sequenceDiagram
+    autonumber
+    actor Customer as Customer
+    participant Gateway as API Gateway (:8080)
+    participant Cart as Cart Service (:8086)
+    participant Order as Order Service (:8087)
+    participant Payment as Payment Service (:8091)
+    participant Fulfillment as Fulfillment Service (:8088)
+    participant Notification as Notification Service (:8090)
+
+    Customer->>Gateway: POST /api/v1/orders (Bearer JWT)
+    Gateway->>Order: Forward with X-User-Id, X-User-Roles, X-Gateway-Secret
+    Order->>Order: Validate digital-only policy & persist order (PENDING)
+    Order-->>Customer: Return OrderResponse (orderId, total)
+
+    Customer->>Gateway: POST /api/v1/payments/create-order
+    Gateway->>Payment: Initialize Razorpay order
+    Payment-->>Customer: Return razorpayOrderId
+
+    Customer->>Gateway: POST /api/v1/payments/verify
+    Gateway->>Payment: Verify Razorpay HMAC-SHA256 signature
+    Payment->>Order: Feign: POST /api/v1/orders/internal/{id}/mark-paid
+    Order->>Order: Update status to PAID & persist OutboxEvent in DB
+    Order-->>Payment: Return 200 OK (mark-paid verified)
+    Payment->>Payment: Calculate 10% platform fee & credit 90% to vendor_ledger
+    Order->>Fulfillment: Outbox Feign: POST /api/v1/fulfillment/internal/fulfill
+    Fulfillment->>Fulfillment: Issue digital license & grant Entitlement
+    Order-->>Notification: Feign (defensive): Dispatch confirmation email
+    Payment-->>Customer: Return PaymentVerificationResponse (SUCCESS, SYNCED)
+
+    Customer->>Gateway: GET /api/v1/downloads/{productId}
+    Gateway->>Fulfillment: Request pre-signed download
+    Fulfillment-->>Customer: Return HMAC-SHA256 signed URL with expiry
+    Customer->>Gateway: GET /api/v1/products/assets/download?key=...&expires=...&signature=...
+    Gateway-->>Customer: Stream raw digital file (PDF/ZIP)

@@ -37,6 +37,10 @@ public class VendorLedger extends BaseAuditableEntity {
     @Column(name = "net_amount", nullable = false, precision = 10, scale = 2)
     private BigDecimal netAmount;
 
+    @Column(name = "refunded_amount", precision = 10, scale = 2)
+    @Builder.Default
+    private BigDecimal refundedAmount = BigDecimal.ZERO;
+
     @Column(nullable = false, length = 30)
-    private String status; // AVAILABLE, PENDING_SETTLEMENT, SETTLED
+    private String status; // AVAILABLE, PENDING_SETTLEMENT, SETTLED, REFUNDED, PARTIALLY_REFUNDED
 }

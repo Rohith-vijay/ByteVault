@@ -7,4 +7,8 @@ public interface StorageService {
     StorageObject downloadFile(String key) throws Exception;
     String generatePresignedUrl(String key, int expiryMinutes) throws Exception;
     void deleteFile(String key) throws Exception;
+
+    default boolean validateSignedUrl(String key, Long expires, String signature) {
+        return false;
+    }
 }
