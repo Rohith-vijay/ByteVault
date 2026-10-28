@@ -3,12 +3,15 @@ package com.bytevault.product.controller;
 import com.bytevault.product.dto.ProductResponse;
 import com.bytevault.product.service.ProductService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.UUID;
 
+@Slf4j
 @RestController
 @RequestMapping("/api/v1/products")
 @RequiredArgsConstructor
@@ -16,11 +19,15 @@ public class ProductController {
 
     private final ProductService productService;
 
+    @Value("${server.port:8084}")
+    private int serverPort;
+
     @GetMapping
     public ResponseEntity<List<ProductResponse>> getAllProducts(
             @RequestParam(value = "search", required = false) String search,
             @RequestParam(value = "type", required = false) com.bytevault.product.entity.ProductType type,
             @RequestParam(value = "categoryId", required = false) Long categoryId) {
+        log.info("[ProductController] GET /api/v1/products handled by instance on port: {}", serverPort);
         
         if (search != null || type != null || categoryId != null) {
             return ResponseEntity.ok(productService.searchProducts(search, type, categoryId));

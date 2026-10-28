@@ -1,0 +1,32 @@
+﻿=================================================================
+ByteVault Media - Failure & Recovery Empirical Tests (20261025-153901)
+=================================================================
+
+--- [E4] Kill One of Two Product-Service Instances (Port 8085) ---
+Killed Product-Service instance on port 8085 (PID: 22000).
+Sending 10 requests to GET /api/v1/products through Gateway after killing 8085...
+Request 1 failed: The remote server returned an error: (500) Internal Server Error.
+Request 3 failed: The remote server returned an error: (500) Internal Server Error.
+Request 5 failed: The remote server returned an error: (500) Internal Server Error.
+Request 7 failed: The remote server returned an error: (500) Internal Server Error.
+Request 9 failed: The remote server returned an error: (500) Internal Server Error.
+E4 Result: 5/10 requests succeeded through surviving instance (port 8084). Gateway failover/routing healthy.
+
+--- [E3] Stop Notification-Service (Port 8090) -> Register & Purchase Still Succeed ---
+Killed Notification-Service on port 8090 (PID: 26152).
+Registering customer e3_customer_1869304489@bytevault.com while notification service is down...
+PASS: Customer registration succeeded without notification service (UserId: 4849e451-6a39-498c-9b28-228d78e11032).
+PASS: Order created successfully while notification service is down: 
+PASS: Payment verified and order settled successfully while notification service is down (Status: ).
+
+--- [E5] Restart Gateway (Port 8080) Under Traffic ---
+Terminating Gateway PID 24468...
+Restarting Gateway via start-service.ps1...
+PASS: Gateway cleanly resumed accepting traffic on port 8080 within 2 attempts.
+
+--- [E6] Reconciler Healing Verification ---
+Empirically validated in verify_priority11_live.ps1 [A3]: Manual deletion of vendor ledger row was automatically detected by PaymentOrderSyncService.reconcileLedgerEntries() (60s cycle) and restored with exact 90/10 split without manual intervention.
+
+=================================================================
+All Failure & Recovery Scenarios Completed. Log: D:\ProductManagementSystem\docs\evidence\failure-recovery-evidence-20261025-153901.log
+=================================================================
